@@ -1,4 +1,3 @@
-// src/app/login/page.tsx
 'use client';
 
 import { useState } from 'react';
@@ -17,8 +16,11 @@ export default function LoginPage() {
     setCargando(true);
 
     try {
-      // Petición POST directa a tu backend local
-      const respuesta = await fetch('http://localhost:3000/api/auth/login', {
+      // 1. Usar la variable de entorno de Vercel (Render) o usar localhost de respaldo si estás en tu PC
+      const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
+      // 2. La petición ahora es dinámica usando la baseURL correcta
+      const respuesta = await fetch(`${baseURL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
