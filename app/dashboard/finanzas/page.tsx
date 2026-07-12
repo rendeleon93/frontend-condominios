@@ -131,7 +131,7 @@ export default function FinanzasDashboardPage() {
       }
     } catch (error) {
       console.error(error);
-    } finaly { setCargandoUnidades(false); }
+    } finally { setCargandoUnidades(false); } // 🛠️ Corregido: "finally" escrito de forma correcta
   };
 
   const abrirGestorCobroDetallado = async (unidadId: string) => {
@@ -157,7 +157,7 @@ export default function FinanzasDashboardPage() {
       const res = await fetch(`${API_BASE_URL}/api/admin/cuotas`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("token")}` },
-        body: JSON.stringify({ condominioId: condominioSeleccionadoId, name: nombreCuota, monto: Number(monto), tipo: tipoCuota, diaVencimiento: Number(diaVencimiento) }),
+        body: JSON.stringify({ condominioId: condominioSeleccionadoId, nombre: nombreCuota, monto: Number(monto), tipo: tipoCuota, diaVencimiento: Number(diaVencimiento) }),
       });
       if (res.ok) {
         setNombreCuota(""); setMonto("");
@@ -292,7 +292,6 @@ export default function FinanzasDashboardPage() {
                   ) : (
                     <div className="divide-y divide-slate-800/60 space-y-2">
                       {deudasPendientes.map((item) => {
-                        // 🛡️ BLINDAJE CLIENT-SIDE: Si viene null del back, el front autogenera la URL para pintar el botón morado
                         const linkFinalStripe = item.urlPagoDigital || `https://checkout.stripe.com/pay/sigmato_checkout_${item.cargoId}`;
 
                         return (
