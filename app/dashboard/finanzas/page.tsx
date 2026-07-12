@@ -32,7 +32,7 @@ interface ResumenFinanciero {
 export default function FinanzasDashboardPage() {
   const API_BASE_URL = "https://backend-condominios.onrender.com";
 
-  // 🚨 SOLUCIÓN PARA HYDRATION: Estado para verificar el montaje en el cliente
+  // Estado para verificar el montaje en el cliente y evitar Hydration errors
   const [mounted, setMounted] = useState(false);
 
   // Catálogos globales
@@ -41,8 +41,12 @@ export default function FinanzasDashboardPage() {
   const [cargandoCondos, setCargandoCondos] = useState(true);
   const [cuotasDisponibles, setCuotasDisponibles] = useState<CuotaCatalogo[]>([]);
 
-  // Estados financieros protegidos
-  const [resumen, setResumen] = useState<ResumenFinanciero>({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
+  // 🚨 AJUSTE DE SEGURIDAD MÁXIMA: Estado inicial fuertemente tipado para evitar cualquier valor nulo
+  const [resumen, setResumen] = useState<ResumenFinanciero>({
+    totalRecaudado: 0,
+    porCobrar: 0,
+    morosidad: 0
+  });
 
   // Estados de formularios (Paso 1)
   const [nombreCuota, setNombreCuota] = useState("");
@@ -126,12 +130,15 @@ export default function FinanzasDashboardPage() {
           setUnidades(Array.isArray(payload) ? payload : []);
         }
 
+        // Aseguramos que si el backend manda datos incompletos o nulos, se asigne el fallback estructurado
         if (payload && payload.resumen) {
           setResumen({
-            totalRecaudado: payload.resumen.totalRecaudado || 0,
-            porCobrar: payload.resumen.porCobrar || 0,
-            morosidad: payload.resumen.morosidad || 0
+            totalRecaudado: Number(payload.resumen.totalRecaudado) || 0,
+            porCobrar: Number(payload.resumen.porCobrar) || 0,
+            morosidad: Number(payload.resumen.morosidad) || 0
           });
+        } else {
+          setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
         }
       }
 
@@ -148,6 +155,7 @@ export default function FinanzasDashboardPage() {
       }
     } catch (error) {
       console.error("Error al cargar datos del condominio:", error);
+      setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 }); // Fallback en caso de error de red
     } finally {
       setCargandoUnidades(false);
     }
@@ -241,10 +249,13 @@ export default function FinanzasDashboardPage() {
     return coincideBusqueda && coincideEstatus;
   });
 
-  // 🚨 SI NO HA SIDO MONTADO, RETORNA UN ESQUELETO O NADA PARA EVITAR DESFASES DE SSR
+  // Si no ha sido montado, retorna un cargando para evitar desfasamientos de SSR
   if (!mounted) {
     return <div className="p-6 text-center text-slate-500 text-sm">Cargando Panel...</div>;
   }
+
+  // Creamos una constante local blindada para renderizar de forma 100% segura los números
+  const seguroResumen = resumen || { totalRecaudado: 0, porCobrar: 0, morosidad: 0 };
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8 bg-slate-950 text-white min-h-screen font-sans">
@@ -273,23 +284,23 @@ export default function FinanzasDashboardPage() {
         </div>
       </header>
 
-      {/* TARJETAS KPI */}
+      {/* TARJETAS KPI MULTI-PROTEGIDAS */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Total Recaudado</p>
           <p className="text-2xl font-bold text-emerald-400">
-            ${(resumen?.totalRecaudado || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
+            ${(seguroResumen.totalRecaudado || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
           </p>
         </div>
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Por Cobrar</p>
           <p className="text-2xl font-bold text-amber-400">
-            ${(resumen?.porCobrar || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
+            ${(seguroResumen.porCobrar || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
           </p>
         </div>
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Morosidad</p>
-          <p className="text-2xl font-bold text-rose-400">{resumen?.morosidad || 0}%</p>
+          <p className="text-2xl font-bold text-rose-400">{seguroResumen.morosidad || 0}%</p>
         </div>
       </section>
 
