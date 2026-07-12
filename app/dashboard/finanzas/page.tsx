@@ -38,7 +38,7 @@ export default function FinanzasDashboardPage() {
   const [cargandoCondos, setCargandoCondos] = useState(true);
   const [cuotasDisponibles, setCuotasDisponibles] = useState<CuotaCatalogo[]>([]);
 
-  // Estados financieros dinámicos (KPIs reales)
+  // Estados financieros protegidos contra fallos de renderizado
   const [resumen, setResumen] = useState<ResumenFinanciero>({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
 
   // Estados de formularios (Paso 1)
@@ -79,11 +79,13 @@ export default function FinanzasDashboardPage() {
         });
         if (res.ok) {
           const data = await res.json();
-          setCondominios(data);
-          if (data.length > 0) setCondominioSeleccionadoId(data[0].id);
+          if (Array.isArray(data) && data.length > 0) {
+            setCondominios(data);
+            setCondominioSeleccionadoId(data[0].id);
+          }
         }
       } catch (error) {
-        console.error(error);
+        console.error("Error cargando condominios:", error);
       } finally {
         setCargandoCondos(false);
       }
@@ -107,8 +109,13 @@ export default function FinanzasDashboardPage() {
       });
       if (resUnidades.ok) {
         const payload = await resUnidades.json();
-        setUnidades(payload.unidades);
-        setResumen(payload.resumen);
+        // Salvaguardas ante payloads inesperados o vacíos
+        setUnidades(payload?.unidades || []);
+        setResumen({
+          totalRecaudado: payload?.resumen?.totalRecaudado || 0,
+          porCobrar: payload?.resumen?.porCobrar || 0,
+          morosidad: payload?.resumen?.morosidad || 0
+        });
       }
 
       const resCuotas = await fetch(`${API_BASE_URL}/api/admin/cuotas?condominioId=${condominioSeleccionadoId}`, {
@@ -116,12 +123,14 @@ export default function FinanzasDashboardPage() {
       });
       if (resCuotas.ok) {
         const dataCuotas = await resCuotas.json();
-        setCuotasDisponibles(dataCuotas);
-        if (dataCuotas.length > 0) setCuotaSeleccionadaId(dataCuotas[0].id);
-        else setCuotaSeleccionadaId("");
+        if (Array.isArray(dataCuotas)) {
+          setCuotasDisponibles(dataCuotas);
+          if (dataCuotas.length > 0) setCuotaSeleccionadaId(dataCuotas[0].id);
+          else setCuotaSeleccionadaId("");
+        }
       }
     } catch (error) {
-      console.error(error);
+      console.error("Error al cargar datos del condominio:", error);
     } finally {
       setCargandoUnidades(false);
     }
@@ -196,7 +205,7 @@ export default function FinanzasDashboardPage() {
         headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
       });
       if (res.ok) {
-        cargarDatosDelCondominio(); // Refresca KPIs y estatus al instante
+        cargarDatosDelCondominio();
       } else {
         alert("No se pudo registrar el pago.");
       }
@@ -205,10 +214,11 @@ export default function FinanzasDashboardPage() {
     }
   };
 
-  // Filtrado lógico local en Frontend
-  const unidadesFiltradas = unidades.filter((u) => {
-    const coincideBusqueda = u.unidad.toLowerCase().includes(busqueda.toLowerCase());
-    const coincideEstatus = filtroEstatus === "TODOS" || u.estatus === filtroEstatus;
+  // Filtrado lógico local en Frontend con prevención de nulos
+  const unidadesFiltradas = (unidades || []).filter((u) => {
+    const nombreUnidad = u?.unidad ? String(u.unidad) : "";
+    const coincideBusqueda = nombreUnidad.toLowerCase().includes(busqueda.toLowerCase());
+    const coincideEstatus = filtroEstatus === "TODOS" || u?.estatus === filtroEstatus;
     return coincideBusqueda && coincideEstatus;
   });
 
@@ -228,26 +238,34 @@ export default function FinanzasDashboardPage() {
             value={condominioSeleccionadoId}
             onChange={(e) => setCondominioSeleccionadoId(e.target.value)}
           >
-            {condominios.map((c) => (
-              <option key={c.id} value={c.id}>{c.nombre}</option>
-            ))}
+            {condominios.length === 0 ? (
+              <option value="">Cargando propiedades...</option>
+            ) : (
+              condominios.map((c) => (
+                <option key={c.id} value={c.id}>{c.nombre}</option>
+              ))
+            )}
           </select>
         </div>
       </header>
 
-      {/* TARJETAS KPI DE MÉTRICAS REALES */}
+      {/* TARJETAS KPI PROTEGIDAS */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Total Recaudado</p>
-          <p className="text-2xl font-bold text-emerald-400">${resumen.totalRecaudado.toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN</p>
+          <p className="text-2xl font-bold text-emerald-400">
+            ${(resumen?.totalRecaudado || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
+          </p>
         </div>
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Por Cobrar</p>
-          <p className="text-2xl font-bold text-amber-400">${resumen.porCobrar.toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN</p>
+          <p className="text-2xl font-bold text-amber-400">
+            ${(resumen?.porCobrar || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
+          </p>
         </div>
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Morosidad</p>
-          <p className="text-2xl font-bold text-rose-400">{resumen.morosidad}%</p>
+          <p className="text-2xl font-bold text-rose-400">{resumen?.morosidad || 0}%</p>
         </div>
       </section>
 
@@ -341,7 +359,6 @@ export default function FinanzasDashboardPage() {
         <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center bg-slate-900/50">
           <h2 className="text-xl font-semibold text-slate-200">Estatus Financiero por Departamento</h2>
           
-          {/* BUSCADOR Y FILTRO DE SELECTOR */}
           <div className="flex flex-col sm:flex-row gap-2">
             <input
               type="text"
@@ -385,7 +402,7 @@ export default function FinanzasDashboardPage() {
                     <td className="p-4 font-mono text-xs text-blue-400">{u.id}</td>
                     <td className="p-4 font-semibold text-white">Depto {u.unidad}</td>
                     <td className="p-4 font-medium text-slate-300">
-                      ${u.monto.toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
+                      ${(u?.monto || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
                     </td>
                     <td className="p-4 text-center">
                       <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${obtenerEstiloEstatus(u.estatus)}`}>
