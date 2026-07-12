@@ -20,14 +20,12 @@ export default function FinanzasDashboardPage() {
   const [resumen, setResumen] = useState<ResumenFinanciero>({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
   const [unidades, setUnidades] = useState<UnidadFinanciera[]>([]);
   
-  // Estados de loaders (Mejora 3)
   const [cargandoUnidades, setCargandoUnidades] = useState(false);
   const [ejecutandoAccion, setEjecutandoAccion] = useState(false);
 
   const [busqueda, setBusqueda] = useState("");
   const [filtroEstatus, setFiltroEstatus] = useState("TODOS");
 
-  // Formularios
   const [nombreCuota, setNombreCuota] = useState("");
   const [monto, setMonto] = useState("");
   const [diaVencimiento, setDiaVencimiento] = useState("10");
@@ -37,13 +35,11 @@ export default function FinanzasDashboardPage() {
   const [mesSeleccionado, setMesSeleccionado] = useState("7");
   const [anioSeleccionado, setAnioSeleccionado] = useState("2026");
 
-  // Modal de Pago Parcial (Mejora 2)
   const [cargoSeleccionadoModal, setCargoSeleccionadoModal] = useState<string | null>(null);
   const [montoAbono, setMontoAbono] = useState("");
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Formateador robusto de moneda (Mejora 1)
   const formatoMoneda = (val: number) => {
     return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(val);
   };
@@ -64,7 +60,7 @@ export default function FinanzasDashboardPage() {
       const res = await fetch(`${API_BASE_URL}/api/admin/condominios`, { headers: { "Authorization": `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
-        if (data.length > 0) {
+        if (data && data.length > 0) {
           setCondominios(data);
           setCondominioSeleccionadoId(String(data[0].id));
         }
@@ -75,7 +71,7 @@ export default function FinanzasDashboardPage() {
   useEffect(() => { if (mounted) cargarCatalogoCondominios(); }, [mounted]);
 
   const cargarDatosDelCondominio = async (idCondo: string) => {
-    if (!idCondo || idCondo === "undefined" || idCondo.trim() === "") return;
+    if (!idCondo || idCondo === "undefined" || idCondo.trim() === "" || idCondo === "null") return;
     setCargandoUnidades(true);
     const token = localStorage.getItem("token");
 
@@ -104,7 +100,9 @@ export default function FinanzasDashboardPage() {
   };
 
   useEffect(() => {
-    if (mounted && condominioSeleccionadoId) cargarDatosDelCondominio(condominioSeleccionadoId);
+    if (mounted && condominioSeleccionadoId && condominioSeleccionadoId !== "undefined") {
+      cargarDatosDelCondominio(condominioSeleccionadoId);
+    }
   }, [condominioSeleccionadoId, mounted]);
 
   const handleCrearCuota = async (e: React.FormEvent) => {
@@ -132,13 +130,12 @@ export default function FinanzasDashboardPage() {
         body: JSON.stringify({ cuotaId: cuotaSeleccionadaId, anio: anioSeleccionado, mes: mesSeleccionado }),
       });
       if (res.ok) {
-        alert("⚡ Cargos mensuales aplicados correctamente sin duplicados.");
+        alert("⚡ Lote masivo aplicado con éxito.");
         cargarDatosDelCondominio(condominioSeleccionadoId);
       }
-    } catch (e) { console.error(e); } finally { setEjecutAction(false); }
+    } catch (e) { console.error(e); } finally { setEjecutandoAccion(false); }
   };
 
-  // Procesar abono o liquidación total (Mejora 2)
   const procesarCobroEfectivo = async (esParcial: boolean) => {
     if (!cargoSeleccionadoModal) return;
     setEjecutandoAccion(true);
@@ -156,16 +153,14 @@ export default function FinanzasDashboardPage() {
     } catch (e) { console.error(e); } finally { setEjecutandoAccion(false); }
   };
 
-  // Exportación nativa a CSV (Mejora 4)
   const exportarDataCSV = () => {
-    const encabezados = ["ID Sistema", "Unidad", "Monto Restante", "Estatus", "Ultima Actualizacion\n"];
-    const filas = unidadesFiltradas.map(u => `${u.id},Depto ${u.unidad},${u.monto},${u.estatus},${u.fechaPago ? new Date(u.fechaPago).toLocaleDateString() : "Sin pagos"}\n`);
-    
+    const encabezados = ["ID Sistema", "Unidad", "Monto Restante", "Estatus\n"];
+    const filas = unidadesFiltradas.map(u => `${u.id},Depto ${u.unidad},${u.monto},${u.estatus}\n`);
     const blob = new Blob([encabezados.join(",") + filas.join("")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.setAttribute("download", `Auditoria_Finanzas_${condominioSeleccionadoId}.csv`);
+    link.setAttribute("download", `Reporte_Finanzas.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -179,32 +174,25 @@ export default function FinanzasDashboardPage() {
     return coincideBusqueda && coincideEstatus;
   });
 
-  if (!mounted) return <div className="p-6 text-center text-slate-500">Cargando Panel...</div>;
+  if (!mounted) return <div className="p-6 text-center text-slate-500">Cargando Módulo...</div>;
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8 bg-slate-950 text-white min-h-screen font-sans">
       
-      {/* MODAL DE GESTIÓN DE COBRO PARCIAL / TOTAL (Mejora 2) */}
+      {/* MODAL DE GESTIÓN DE COBROS */}
       {cargoSeleccionadoModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 animate-fade-in">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-sm w-full space-y-4">
-            <h3 className="text-lg font-bold text-slate-100">⚖️ Registrar Recepción de Pago</h3>
-            <p className="text-xs text-slate-400">Selecciona si deseas liquidar la totalidad de la cuota activa o registrar un abono parcial.</p>
-            
+            <h3 className="text-lg font-bold text-slate-100">⚖️ Registrar Recepción Pago</h3>
             <div className="space-y-2">
-              <label className="block text-xs font-semibold text-slate-400 uppercase">Monto del Abono Parcial ($)</label>
+              <label className="block text-xs font-semibold text-slate-400 uppercase">Abono Parcial ($)</label>
               <input type="number" placeholder="Ej. 500" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white text-sm focus:outline-none" value={montoAbono} onChange={(e) => setMontoAbono(e.target.value)} />
             </div>
-
             <div className="grid grid-cols-2 gap-2 pt-2">
-              <button onClick={() => procesarCobroEfectivo(true)} disabled={!montoAbono} className="bg-sky-500 hover:bg-sky-600 disabled:opacity-40 text-slate-950 font-bold py-2 rounded-lg text-xs transition">
-                Abonar Parcial
-              </button>
-              <button onClick={() => procesarCobroEfectivo(false)} className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2 rounded-lg text-xs transition">
-                Liquidar Total
-              </button>
+              <button onClick={() => procesarCobroEfectivo(true)} disabled={!montoAbono || ejecutandoAccion} className="bg-sky-500 hover:bg-sky-600 disabled:opacity-40 text-slate-950 font-bold py-2 rounded-lg text-xs transition">Abonar Parcial</button>
+              <button onClick={() => procesarCobroEfectivo(false)} disabled={ejecutandoAccion} className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2 rounded-lg text-xs transition">Liquidar Total</button>
             </div>
-            <button onClick={() => setCargoSeleccionadoModal(null)} className="w-full text-center text-xs text-slate-500 hover:text-slate-300 transition">Cancelar Operación</button>
+            <button onClick={() => setCargoSeleccionadoModal(null)} className="w-full text-center text-xs text-slate-500 hover:text-slate-300">Cancelar</button>
           </div>
         </div>
       )}
@@ -213,9 +201,8 @@ export default function FinanzasDashboardPage() {
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-100">Panel Financiero de Administración</h1>
-          <p className="text-slate-400 text-sm">Auditoría, flujos de caja y facturaciones en bloque.</p>
+          <p className="text-slate-400 text-sm">Flujos analíticos y facturación corporativa.</p>
         </div>
-
         <div className="w-full sm:w-72 bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">🏢 Condominio Activo</label>
           <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none cursor-pointer" value={condominioSeleccionadoId} onChange={(e) => setCondominioSeleccionadoId(e.target.value)}>
@@ -224,7 +211,7 @@ export default function FinanzasDashboardPage() {
         </div>
       </header>
 
-      {/* METRICAS KPI CON FORMATEO PROFESIONAL (Mejora 1) */}
+      {/* KPIS */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-1">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Total Recaudado</p>
@@ -235,17 +222,17 @@ export default function FinanzasDashboardPage() {
           <p className="text-2xl font-bold text-amber-400">{formatoMoneda(resumen.porCobrar)}</p>
         </div>
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-1">
-          <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Morosidad General</p>
+          <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Morosidad</p>
           <p className="text-2xl font-bold text-rose-400">{resumen.morosidad}%</p>
         </div>
       </section>
 
-      {/* SECCIONES OPERATIVAS */}
+      {/* FORMULARIOS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4">
-          <h2 className="text-base font-semibold text-amber-400">📋 1. Registrar Concepto Catálogo</h2>
+          <h2 className="text-base font-semibold text-amber-400">📋 1. Registrar Concepto</h2>
           <form onSubmit={handleCrearCuota} className="space-y-3 text-sm">
-            <input type="text" placeholder="Ej. Mantenimiento Julio Torres" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={nombreCuota} onChange={(e) => setNombreCuota(e.target.value)} required />
+            <input type="text" placeholder="Ej. Mantenimiento Ordinario" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={nombreCuota} onChange={(e) => setNombreCuota(e.target.value)} required />
             <div className="grid grid-cols-2 gap-2">
               <input type="number" placeholder="Monto ($)" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={monto} onChange={(e) => setMonto(e.target.value)} required />
               <input type="number" min="1" max="28" placeholder="Día Vence" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={diaVencimiento} onChange={(e) => setDiaVencimiento(e.target.value)} required />
@@ -258,7 +245,7 @@ export default function FinanzasDashboardPage() {
 
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4 flex flex-col justify-between">
           <div className="space-y-3 text-sm">
-            <h2 className="text-base font-semibold text-emerald-400">🚀 2. Disparar Facturación Masiva</h2>
+            <h2 className="text-base font-semibold text-emerald-400">🚀 2. Facturación Masiva</h2>
             {cuotasDisponibles.length === 0 ? (
               <div className="text-xs bg-slate-950 border border-dashed border-slate-800 rounded-lg p-4 text-center text-amber-400">Registra un concepto primero.</div>
             ) : (
@@ -276,24 +263,22 @@ export default function FinanzasDashboardPage() {
             </div>
           </div>
           <button onClick={handleGenerarCargosMasivos} disabled={cuotasDisponibles.length === 0 || ejecutandoAccion} className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-slate-950 font-bold py-2 rounded-lg text-xs transition mt-2">
-            {ejecutandoAccion ? "Generando lotes de cobro..." : "Aplicar Cuentas por Cobrar Masivas"}
+            {ejecutandoAccion ? "Generando..." : "Aplicar Cuentas Masivas"}
           </button>
         </div>
       </div>
 
-      {/* TABLA AVANZADA CON EXPORTACIÓN DIRECTA (Mejora 4) */}
+      {/* TABLA */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-md">
         <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center bg-slate-900/50">
           <div className="flex items-center gap-4">
             <h2 className="text-lg font-semibold text-slate-200">Estatus de Cuentas</h2>
-            <button onClick={exportarDataCSV} disabled={unidadesFiltradas.length === 0} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs px-3 py-1 rounded-lg text-slate-300 font-medium transition">
-              📥 Exportar Excel (CSV)
-            </button>
+            <button onClick={exportarDataCSV} disabled={unidadesFiltradas.length === 0} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs px-3 py-1 rounded-lg text-slate-300 font-medium transition">📥 Exportar CSV</button>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
             <input type="text" placeholder="Buscar unidad..." className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
             <select className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300" value={filtroEstatus} onChange={(e) => setFiltroEstatus(e.target.value)}>
-              <option value="TODOS">Todos los Estatus</option>
+              <option value="TODOS">Todos</option>
               <option value="PENDIENTE">Pendientes</option>
               <option value="PAGADO">Pagados</option>
               <option value="PARCIAL">Parciales</option>
@@ -303,9 +288,9 @@ export default function FinanzasDashboardPage() {
         </div>
 
         {cargandoUnidades ? (
-          <div className="p-12 text-center text-slate-500 text-sm animate-pulse">⏳ Extrayendo flujos financieros de la base de datos...</div>
+          <div className="p-12 text-center text-slate-500 text-sm animate-pulse">⏳ Sincronizando balance...</div>
         ) : unidadesFiltradas.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 text-sm">📭 No hay registros para mostrar con los filtros aplicados.</div>
+          <div className="p-12 text-center text-slate-500 text-sm">📭 No hay registros financieros.</div>
         ) : (
           <div className="overflow-x-auto text-xs sm:text-sm">
             <table className="w-full text-left text-slate-300">
@@ -327,19 +312,13 @@ export default function FinanzasDashboardPage() {
                       <td className="p-4 font-semibold text-white">Depto {u.unidad}</td>
                       <td className="p-4 font-medium text-slate-300">{formatoMoneda(u.monto)}</td>
                       <td className="p-4 text-center">
-                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${obtenerEstiloEstatus(u.estatus)}`}>
-                          {u.estatus}
-                        </span>
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${obtenerEstiloEstatus(u.estatus)}`}>{u.estatus}</span>
                       </td>
                       <td className="p-4 text-center">
                         {u.cargoId && u.estatus !== "PAGADO" ? (
-                          <button onClick={() => setCargoSeleccionadoModal(u.cargoId)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-3 py-1 rounded-md text-xs transition shadow-sm">
-                            Gestionar Cobro
-                          </button>
+                          <button onClick={() => setCargoSeleccionadoModal(u.cargoId)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-3 py-1 rounded-md text-xs transition">Gestionar Cobro</button>
                         ) : (
-                          <span className="text-emerald-400 text-xs font-medium flex items-center justify-center gap-1">
-                            ✅ Al corriente
-                          </span>
+                          <span className="text-emerald-400 text-xs font-medium">✅ Al corriente</span>
                         )}
                       </td>
                     </tr>
