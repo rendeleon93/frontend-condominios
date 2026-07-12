@@ -8,19 +8,31 @@ interface Condominio {
   direccion: string;
 }
 
+interface CuotaCatalogo {
+  id: string;
+  nombre: string;
+  monto: number;
+  tipo: string;
+}
+
 interface UnidadFinanciera {
   id: string;
   unidad: string;
   estatus: "PENDIENTE" | "PAGADO" | "PARCIAL" | "VENCIDO";
   monto: number;
-  clase: string;
 }
 
 export default function FinanzasDashboardPage() {
+  // Constante de producción para tu servidor en Render
+  const API_BASE_URL = "https://backend-condominios.onrender.com";
+
   // Estados para el catálogo de condominios dinámico
   const [condominios, setCondominios] = useState<Condominio[]>([]);
   const [condominioSeleccionadoId, setCondominioSeleccionadoId] = useState("");
   const [cargandoCondos, setCargandoCondos] = useState(true);
+
+  // Catálogo secundario: Cuotas disponibles para el condominio activo
+  const [cuotasDisponibles, setCuotasDisponibles] = useState<CuotaCatalogo[]>([]);
 
   // Estados de formularios (Paso 1)
   const [nombreCuota, setNombreCuota] = useState("");
@@ -37,20 +49,31 @@ export default function FinanzasDashboardPage() {
   const [unidades, setUnidades] = useState<UnidadFinanciera[]>([]);
   const [cargandoUnidades, setCargandoUnidades] = useState(false);
 
+  // Mapeador visual para los estatus financieros
+  const obtenerEstiloEstatus = (estatus: UnidadFinanciera["estatus"]) => {
+    const estilos = {
+      PAGADO: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30",
+      PENDIENTE: "bg-amber-500/10 text-amber-400 border border-amber-500/30",
+      VENCIDO: "bg-rose-500/10 text-rose-400 border border-rose-500/30",
+      PARCIAL: "bg-sky-500/10 text-sky-400 border border-sky-500/30",
+    };
+    return estilos[estatus] || "bg-slate-800 text-slate-400";
+  };
+
   // 1. Cargar el catálogo global de condominios al inicializar
   useEffect(() => {
-    const cargarCatálogoCondominios = async () => {
+    const cargarCatalogoCondominios = async () => {
       setCargandoCondos(true);
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch("http://localhost:3000/api/admin/condominios", {
+        const res = await fetch(`${API_BASE_URL}/api/admin/condominios`, {
           headers: { "Authorization": `Bearer ${token}` },
         });
         if (res.ok) {
           const data = await res.json();
           setCondominios(data);
           if (data.length > 0) {
-            setCondominioSeleccionadoId(data[0].id); // Preselecciona el primero
+            setCondominioSeleccionadoId(data[0].id);
           }
         }
       } catch (error) {
@@ -60,36 +83,53 @@ export default function FinanzasDashboardPage() {
       }
     };
 
-    cargarCatálogoCondominios();
+    cargarCatalogoCondominios();
   }, []);
 
-  // 2. Extraer las unidades financieras cada vez que cambie el condominio seleccionado
-  const cargarEstatusUnidades = async () => {
+  // 2. Extraer cuotas base y unidades financieras cada vez que cambie el condominio seleccionado
+  const cargarDatosDelCondominio = async () => {
     if (!condominioSeleccionadoId) {
       setUnidades([]);
+      setCuotasDisponibles([]);
       return;
     }
     setCargandoUnidades(true);
+    const token = localStorage.getItem("token");
+
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`http://localhost:3000/api/admin/unidades/${condominioSeleccionadoId}`, {
+      // Petición A: Cargar estatus financiero por departamento
+      const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominioSeleccionadoId}`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
-      if (res.ok) {
-        const data = await res.json();
+      if (resUnidades.ok) {
+        const data = await resUnidades.json();
         setUnidades(data);
       } else {
         setUnidades([]);
       }
+
+      // Petición B: Cargar conceptos de cuota guardados en el catálogo para este condominio
+      const resCuotas = await fetch(`${API_BASE_URL}/api/admin/cuotas?condominioId=${condominioSeleccionadoId}`, {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      if (resCuotas.ok) {
+        const dataCuotas = await resCuotas.json();
+        setCuotasDisponibles(dataCuotas);
+        if (dataCuotas.length > 0) {
+          setCuotaSeleccionadaId(dataCuotas[0].id); // Autoselecciona la primera cuota en el paso 2
+        } else {
+          setCuotaSeleccionadaId("");
+        }
+      }
     } catch (error) {
-      console.error("Error al cargar unidades del condominio:", error);
+      console.error("Error al cargar la información financiera:", error);
     } finally {
       setCargandoUnidades(false);
     }
   };
 
   useEffect(() => {
-    cargarEstatusUnidades();
+    cargarDatosDelCondominio();
   }, [condominioSeleccionadoId]);
 
   // 3. Guardar concepto en el catálogo enlazado al condominio activo
@@ -98,7 +138,7 @@ export default function FinanzasDashboardPage() {
     if (!condominioSeleccionadoId) return alert("Por favor selecciona o registra un condominio primero.");
 
     try {
-      const res = await fetch("http://localhost:3000/api/admin/cuotas", {
+      const res = await fetch(`${API_BASE_URL}/api/admin/cuotas`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -107,18 +147,18 @@ export default function FinanzasDashboardPage() {
         body: JSON.stringify({
           condominioId: condominioSeleccionadoId,
           nombre: nombreCuota,
-          monto: monto,
+          monto: Number(monto),
           tipo: tipoCuota,
-          diaVencimiento: diaVencimiento,
+          diaVencimiento: Number(diaVencimiento),
         }),
       });
 
       if (res.ok) {
-        const nuevaCuota = await res.json();
-        alert(`🎉 Guardada con éxito. Copia este ID para la facturación masiva:\n\n${nuevaCuota.id}`);
+        alert("🎉 Concepto de cuota guardado e integrado con éxito al catálogo.");
         setNombreCuota("");
         setMonto("");
-        setCuotaSeleccionadaId(nuevaCuota.id); // Autorellena el paso 2 por comodidad
+        // Refrescar datos para actualizar el selector de facturación masiva
+        cargarDatosDelCondominio();
       } else {
         alert("Error al guardar la cuota en el servidor.");
       }
@@ -129,10 +169,10 @@ export default function FinanzasDashboardPage() {
 
   // 4. Lanzar cobro masivo del periodo seleccionado
   const handleGenerarCargosMasivos = async () => {
-    if (!cuotaSeleccionadaId) return alert("Por favor ingresa el ID de la cuota base del paso 1.");
+    if (!cuotaSeleccionadaId) return alert("Por favor selecciona una cuota base del catálogo (Paso 1).");
     
     try {
-      const res = await fetch("http://localhost:3000/api/admin/generar-cargos-mes", {
+      const res = await fetch(`${API_BASE_URL}/api/admin/generar-cargos-mes`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -148,7 +188,7 @@ export default function FinanzasDashboardPage() {
       const data = await res.json();
       if (res.ok) {
         alert(`⚡ ${data.mensaje}`);
-        cargarEstatusUnidades(); // Actualiza la tabla automáticamente
+        cargarDatosDelCondominio(); // Actualiza la tabla automáticamente
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -158,17 +198,17 @@ export default function FinanzasDashboardPage() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-8 bg-slate-950 text-white min-h-screen">
+    <div className="p-6 max-w-6xl mx-auto space-y-8 bg-slate-950 text-white min-h-screen font-sans">
       {/* HEADER PRINCIPAL */}
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Panel Financiero de Administración</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-100">Panel Financiero de Administración</h1>
           <p className="text-slate-400 text-sm">Gestiona flujos, asigna mantenimiento mensual y audita departamentos.</p>
         </div>
 
         {/* SELECTOR GLOBAL DE ENTORNO */}
-        <div className="w-full sm:w-72 bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">🏢 Condominio Activo</label>
+        <div className="w-full sm:w-72 bg-slate-900 p-3 rounded-xl border border-slate-800/80 space-y-1">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">🏢 Condominio Activo</label>
           {cargandoCondos ? (
             <div className="text-xs text-slate-500 animate-pulse py-1">Cargando complejos...</div>
           ) : (
@@ -189,11 +229,12 @@ export default function FinanzasDashboardPage() {
         </div>
       </header>
 
-      <hr className="border-slate-800" />
+      <hr className="border-slate-800/60" />
 
       {/* SECCIÓN DE OPERACIONES (FORMULARIOS) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* CATALOGO DE CUOTAS */}
+        
+        {/* PASO 1: CATALOGO DE CUOTAS */}
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4">
           <h2 className="text-lg font-semibold text-amber-400 flex items-center gap-2">
             <span>📋</span> 1. Crear Concepto de Cuota Base
@@ -258,26 +299,35 @@ export default function FinanzasDashboardPage() {
           </form>
         </div>
 
-        {/* FACTURACIÓN MASIVA */}
+        {/* PASO 2: FACTURACIÓN MASIVA CON SELECTOR AUTOMÁTICO */}
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4 flex flex-col justify-between">
           <div className="space-y-4 text-sm">
             <h2 className="text-lg font-semibold text-emerald-400 flex items-center gap-2">
               <span>🚀</span> 2. Disparar Facturación del Mes
             </h2>
             <p className="text-xs text-slate-400 leading-relaxed">
-              El sistema asociará un nuevo cargo con estatus "PENDIENTE" a cada uno de los departamentos registrados en el condominio seleccionado arriba.
+              El sistema asociará un nuevo cargo con estatus "PENDIENTE" a cada uno de los departamentos registrados en el condominio seleccionado.
             </p>
 
             <div>
-              <label className="block text-slate-400 mb-1">ID de la Cuota Catálogo</label>
-              <input
-                type="text"
-                placeholder="Pega el ID o se autorellenará al hacer el paso 1"
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-emerald-500 font-mono text-xs text-emerald-400"
-                value={cuotaSeleccionadaId}
-                onChange={(e) => setCuotaSeleccionadaId(e.target.value)}
-                required
-              />
+              <label className="block text-slate-400 mb-1">Seleccionar Cuota del Catálogo</label>
+              {cuotasDisponibles.length === 0 ? (
+                <div className="text-xs bg-slate-950 border border-dashed border-slate-800 rounded-lg p-3 text-amber-400 text-center">
+                  ⚠️ No hay cuotas de alta para este condominio. Registra una en el Paso 1.
+                </div>
+              ) : (
+                <select
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-emerald-400 font-mono focus:outline-none focus:border-emerald-500"
+                  value={cuotaSeleccionadaId}
+                  onChange={(e) => setCuotaSeleccionadaId(e.target.value)}
+                >
+                  {cuotasDisponibles.map((cuota) => (
+                    <option key={cuota.id} value={cuota.id}>
+                      {cuota.nombre} — ${cuota.monto} MXN
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -318,7 +368,8 @@ export default function FinanzasDashboardPage() {
 
           <button
             onClick={handleGenerarCargosMasivos}
-            className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2.5 rounded-lg transition mt-4"
+            disabled={cuotasDisponibles.length === 0}
+            className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2.5 rounded-lg transition mt-4 disabled:opacity-40"
           >
             Generar Cuentas por Cobrar
           </button>
@@ -326,26 +377,26 @@ export default function FinanzasDashboardPage() {
       </div>
 
       {/* DETALLE FINANCIERO DINÁMICO */}
-      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-        <div className="p-5 border-b border-slate-800 flex justify-between items-center">
-          <h2 className="text-xl font-semibold">Estatus Financiero por Departamento</h2>
-          <span className="text-xs bg-slate-800 px-3 py-1 rounded-full text-slate-400">
+      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-md">
+        <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+          <h2 className="text-xl font-semibold text-slate-200">Estatus Financiero por Departamento</h2>
+          <span className="text-xs bg-slate-950 border border-slate-800 px-3 py-1 rounded-full text-slate-400 font-medium">
             {unidades.length} Unidades Totales
           </span>
         </div>
 
         {cargandoUnidades ? (
-          <div className="p-10 text-center text-slate-500 text-sm animate-pulse">
+          <div className="p-12 text-center text-slate-500 text-sm animate-pulse">
             ⏳ Extrayendo registros financieros en tiempo real desde Render...
           </div>
         ) : unidades.length === 0 ? (
-          <div className="p-10 text-center text-slate-500 text-sm">
+          <div className="p-12 text-center text-slate-500 text-sm">
             📭 No hay departamentos vinculados a este condominio o no se han generado cargos activos.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-300">
-              <thead className="bg-slate-950 text-slate-400 uppercase text-xs tracking-wider">
+          <div className="overflow-x-auto text-xs sm:text-sm">
+            <table className="w-full text-left text-slate-300">
+              <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
                 <tr>
                   <th className="p-4">ID Sistema</th>
                   <th className="p-4">Departamento / Unidad</th>
@@ -353,16 +404,16 @@ export default function FinanzasDashboardPage() {
                   <th className="p-4 text-center">Estatus del Periodo</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className="divide-y divide-slate-800/60">
                 {unidades.map((u) => (
-                  <tr key={u.id} className="hover:bg-slate-800/50 transition-colors">
-                    <td className="p-4 font-mono text-xs text-slate-500">{u.id}</td>
+                  <tr key={u.id} className="hover:bg-slate-800/30 transition-colors">
+                    <td className="p-4 font-mono text-xs text-blue-400">{u.id}</td>
                     <td className="p-4 font-semibold text-white">Depto {u.unidad}</td>
-                    <td className="p-4 font-medium text-slate-200">
+                    <td className="p-4 font-medium text-slate-300">
                       ${u.monto.toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
                     </td>
                     <td className="p-4 text-center">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${u.clase}`}>
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${obtenerEstiloEstatus(u.estatus)}`}>
                         {u.estatus}
                       </span>
                     </td>
