@@ -40,6 +40,7 @@ export default function FinanzasDashboardPage() {
   const [cargandoCondos, setCargandoCondos] = useState(true);
   const [cuotasDisponibles, setCuotasDisponibles] = useState<CuotaCatalogo[]>([]);
 
+  // Estado inicial del resumen financiero
   const [resumen, setResumen] = useState<ResumenFinanciero>({
     totalRecaudado: 0,
     porCobrar: 0,
@@ -74,6 +75,7 @@ export default function FinanzasDashboardPage() {
     return estilos[estatus] || "bg-slate-800 text-slate-400";
   };
 
+  // 1. Cargar catálogo inicial de condominios
   useEffect(() => {
     if (!mounted) return;
     const cargarCatalogoCondominios = async () => {
@@ -109,17 +111,19 @@ export default function FinanzasDashboardPage() {
     cargarCatalogoCondominios();
   }, [mounted]);
 
-  const cargarDatosDelCondominio = async () => {
-    if (!condominioSeleccionadoId) {
-      setUnidades([]);
-      setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
-      return;
-    }
+  // 2. Cargar datos del condominio de forma reactiva y limpia
+  const cargarDatosDelCondominio = async (idCondo: string) => {
+    if (!idCondo) return;
+    
     setCargandoUnidades(true);
+    // Limpieza previa del estado para obligar al DOM a refrescar las tarjetas superiores
+    setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
+    setUnidades([]);
+
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
     try {
-      const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominioSeleccionadoId}/analiticas`, {
+      const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${idCondo}/analiticas`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
       
@@ -129,14 +133,12 @@ export default function FinanzasDashboardPage() {
       }
 
       if (resUnidades.ok) {
-        const payload = await resUnidades.json() as any;
+        const payload = await resUnidades.json();
         
         if (payload && payload.unidades && Array.isArray(payload.unidades)) {
           setUnidades(payload.unidades);
         } else if (payload && Array.isArray(payload)) {
           setUnidades(payload);
-        } else {
-          setUnidades([]);
         }
 
         if (payload && payload.resumen) {
@@ -145,12 +147,10 @@ export default function FinanzasDashboardPage() {
             porCobrar: Number(payload.resumen.porCobrar) || 0,
             morosidad: Number(payload.resumen.morosidad) || 0
           });
-        } else {
-          setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
         }
       }
 
-      const resCuotas = await fetch(`${API_BASE_URL}/api/admin/cuotas?condominioId=${condominioSeleccionadoId}`, {
+      const resCuotas = await fetch(`${API_BASE_URL}/api/admin/cuotas?condominioId=${idCondo}`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
       if (resCuotas.ok) {
@@ -163,16 +163,15 @@ export default function FinanzasDashboardPage() {
       }
     } catch (error) {
       console.error(error);
-      setUnidades([]);
-      setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
     } finally {
       setCargandoUnidades(false);
     }
   };
 
+  // Escucha activa y precisa sobre el cambio del combo de condominios
   useEffect(() => {
     if (mounted && condominioSeleccionadoId) {
-      cargarDatosDelCondominio();
+      cargarDatosDelCondominio(condominioSeleccionadoId);
     }
   }, [condominioSeleccionadoId, mounted]);
 
@@ -201,7 +200,7 @@ export default function FinanzasDashboardPage() {
         alert("🎉 Concepto integrado al catálogo.");
         setNombreCuota("");
         setMonto("");
-        cargarDatosDelCondominio();
+        cargarDatosDelCondominio(condominioSeleccionadoId);
       }
     } catch (error) {
       console.error(error);
@@ -226,7 +225,7 @@ export default function FinanzasDashboardPage() {
       });
       if (res.ok) {
         alert("⚡ Cargos masivos generados con éxito.");
-        cargarDatosDelCondominio();
+        cargarDatosDelCondominio(condominioSeleccionadoId);
       }
     } catch (error) {
       console.error(error);
@@ -241,7 +240,7 @@ export default function FinanzasDashboardPage() {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (res.ok) {
-        cargarDatosDelCondominio();
+        cargarDatosDelCondominio(condominioSeleccionadoId);
       }
     } catch (error) {
       console.error(error);
@@ -273,10 +272,6 @@ export default function FinanzasDashboardPage() {
     return coincideBusqueda && coincideEstatus;
   });
 
-  const totalRecaudadoSeguro = resumen && resumen.totalRecaudado ? Number(resumen.totalRecaudado) : 0;
-  const porCobrarSeguro = resumen && resumen.porCobrar ? Number(resumen.porCobrar) : 0;
-  const morosidadSegura = resumen && resumen.morosidad ? Number(resumen.morosidad) : 0;
-
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8 bg-slate-950 text-white min-h-screen font-sans">
       {/* HEADER */}
@@ -304,19 +299,19 @@ export default function FinanzasDashboardPage() {
         </div>
       </header>
 
-      {/* TARJETAS KPI — INFASEABLES Y ULTRA-BLINDADAS */}
+      {/* TARJETAS KPI VINCULADAS CORRECTAMENTE AL ESTADO REACTIVO */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Total Recaudado</p>
-          <p className="text-2xl font-bold text-emerald-400">${totalRecaudadoSeguro}.00 MXN</p>
+          <p className="text-2xl font-bold text-emerald-400">${resumen.totalRecaudado}.00 MXN</p>
         </div>
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Por Cobrar</p>
-          <p className="text-2xl font-bold text-amber-400">${porCobrarSeguro}.00 MXN</p>
+          <p className="text-2xl font-bold text-amber-400">${resumen.porCobrar}.00 MXN</p>
         </div>
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Morosidad</p>
-          <p className="text-2xl font-bold text-rose-400">{morosidadSegura}%</p>
+          <p className="text-2xl font-bold text-rose-400">{resumen.morosidad}%</p>
         </div>
       </section>
 
@@ -395,7 +390,7 @@ export default function FinanzasDashboardPage() {
         </div>
       </div>
 
-      {/* TABLA DINÁMICA DE USUARIOS */}
+      {/* TABLA DINÁMICA DE DEPARTAMENTOS */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-md">
         <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center bg-slate-900/50">
           <h2 className="text-xl font-semibold text-slate-200">Estatus Financiero por Departamento</h2>
@@ -433,7 +428,7 @@ export default function FinanzasDashboardPage() {
                   return (
                     <tr key={u.id} className="hover:bg-slate-800/30 transition-colors">
                       <td className="p-4 font-mono text-xs text-blue-400">{u.id}</td>
-                      <td className="p-4 font-semibold text-white">{u.unidad || "S/N"}</td>
+                      <td className="p-4 font-semibold text-white">Depto {u.unidad || "S/N"}</td>
                       <td className="p-4 font-medium text-slate-300">${montoUnidad}.00 MXN</td>
                       <td className="p-4 text-center">
                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${obtenerEstiloEstatus(u.estatus)}`}>
