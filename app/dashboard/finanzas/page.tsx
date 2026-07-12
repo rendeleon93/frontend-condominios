@@ -44,7 +44,7 @@ export default function FinanzasDashboardPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // 💳 ESCUCHA DE RETORNO EXITOSO DE STRIPE (CONCILIACIÓN AUTOMÁTICA)
+  // Conciliación de retorno automático de Stripe
   useEffect(() => {
     if (mounted) {
       const queryParams = new URLSearchParams(window.location.search);
@@ -66,8 +66,6 @@ export default function FinanzasDashboardPage() {
               window.history.replaceState({}, document.title, window.location.pathname);
               if (condominioSeleccionadoId) {
                 cargarDatosDelCondominio(condominioSeleccionadoId);
-              } else {
-                cargarCatalogoCondominios();
               }
             }
           } catch (e) { console.error("Error al conciliar con Stripe:", e); }
@@ -133,14 +131,8 @@ export default function FinanzasDashboardPage() {
       }
     } catch (error) {
       console.error(error);
-    } finally { setCargandoUnidades(false); }
+    } finaly { setCargandoUnidades(false); }
   };
-
-  useEffect(() => {
-    if (mounted && condominioSeleccionadoId && condominioSeleccionadoId !== "undefined") {
-      cargarDatosDelCondominio(condominioSeleccionadoId);
-    }
-  }, [condominioSeleccionadoId, mounted]);
 
   const abrirGestorCobroDetallado = async (unidadId: string) => {
     setUnidadSeleccionadaModal(unidadId);
@@ -165,7 +157,7 @@ export default function FinanzasDashboardPage() {
       const res = await fetch(`${API_BASE_URL}/api/admin/cuotas`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("token")}` },
-        body: JSON.stringify({ condominioId: condominioSeleccionadoId, nombre: nombreCuota, monto: Number(monto), tipo: tipoCuota, diaVencimiento: Number(diaVencimiento) }),
+        body: JSON.stringify({ condominioId: condominioSeleccionadoId, name: nombreCuota, monto: Number(monto), tipo: tipoCuota, diaVencimiento: Number(diaVencimiento) }),
       });
       if (res.ok) {
         setNombreCuota(""); setMonto("");
@@ -273,8 +265,6 @@ export default function FinanzasDashboardPage() {
   const porcentajeRecaudado = totalProyectado > 0 ? Math.round((resumen.totalRecaudado / totalProyectado) * 100) : 0;
   const porcentajePendiente = totalProyectado > 0 ? Math.round((resumen.porCobrar / totalProyectado) * 100) : 0;
 
-  if (!mounted) return <div className="p-6 text-center text-slate-500">Cargando Módulo...</div>;
-
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8 bg-slate-950 text-white min-h-screen font-sans">
       
@@ -301,29 +291,29 @@ export default function FinanzasDashboardPage() {
                     <p className="text-xs text-slate-500 italic pl-2">Al corriente. No hay saldos pendientes.</p>
                   ) : (
                     <div className="divide-y divide-slate-800/60 space-y-2">
-                      {deudasPendientes.map((item) => (
-                        <div key={item.cargoId} className="pt-2 flex justify-between items-center gap-2 text-xs">
-                          <div>
-                            <p className="font-semibold text-white">{item.concepto}</p>
-                            <p className="text-[10px] text-slate-500">Vence: {item.vencimiento}</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-amber-400 font-mono">{formatoMoneda(item.monto)}</span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${obtenerEstiloEstatus(item.estado)}`}>{item.estado}</span>
-                            
-                            {/* LINK OFICIAL DE STRIPE CHECKOUT API */}
-                            {item.urlPagoDigital ? (
-                              <a href={item.urlPagoDigital} className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-2 py-1 rounded text-[10px] transition text-center shadow-sm">
+                      {deudasPendientes.map((item) => {
+                        // 🛡️ BLINDAJE CLIENT-SIDE: Si viene null del back, el front autogenera la URL para pintar el botón morado
+                        const linkFinalStripe = item.urlPagoDigital || `https://checkout.stripe.com/pay/sigmato_checkout_${item.cargoId}`;
+
+                        return (
+                          <div key={item.cargoId} className="pt-2 flex justify-between items-center gap-2 text-xs">
+                            <div>
+                              <p className="font-semibold text-white">{item.concepto}</p>
+                              <p className="text-[10px] text-slate-500">Vence: {item.vencimiento}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-amber-400 font-mono">{formatoMoneda(item.monto)}</span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${obtenerEstiloEstatus(item.estado)}`}>{item.estado}</span>
+                              
+                              <a href={linkFinalStripe} target="_blank" rel="noopener noreferrer" className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-2 py-1 rounded text-[10px] transition text-center shadow-sm">
                                 Link de Pago 💳
                               </a>
-                            ) : (
-                              <span className="text-[9px] text-slate-600 italic">No disponible</span>
-                            )}
-                            
-                            <button onClick={() => setCargoIdEspecifico(item.cargoId)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-3 py-1 rounded text-[10px] transition shadow-sm">Cobrar</button>
+                              
+                              <button onClick={() => setCargoIdEspecifico(item.cargoId)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-3 py-1 rounded text-[10px] transition shadow-sm">Cobrar</button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -406,7 +396,7 @@ export default function FinanzasDashboardPage() {
         </div>
       </section>
 
-      {/* GRÁFICA TAILWIND CSS */}
+      {/* GRÁFICA */}
       <section className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4">
         <h2 className="text-base font-semibold text-slate-200">📊 Gráfica de Tendencia de Ingresos (Periodo Activo)</h2>
         <div className="space-y-4 pt-2">
