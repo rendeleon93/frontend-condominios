@@ -41,7 +41,7 @@ export default function FinanzasDashboardPage() {
   const [cargandoCondos, setCargandoCondos] = useState(true);
   const [cuotasDisponibles, setCuotasDisponibles] = useState<CuotaCatalogo[]>([]);
 
-  // Estado inicial fuertemente tipado para el resumen de KPIs
+  // Estado inicial fuertemente protegido para el resumen de KPIs
   const [resumen, setResumen] = useState<ResumenFinanciero>({
     totalRecaudado: 0,
     porCobrar: 0,
@@ -86,7 +86,7 @@ export default function FinanzasDashboardPage() {
     const cargarCatalogoCondominios = async () => {
       setCargandoCondos(true);
       try {
-        const token = localStorage.getItem("token");
+        const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
         const res = await fetch(`${API_BASE_URL}/api/admin/condominios`, {
           headers: { "Authorization": `Bearer ${token}` },
         });
@@ -114,7 +114,7 @@ export default function FinanzasDashboardPage() {
       return;
     }
     setCargandoUnidades(true);
-    const token = localStorage.getItem("token");
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
     try {
       const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominioSeleccionadoId}`, {
@@ -122,26 +122,39 @@ export default function FinanzasDashboardPage() {
       });
       
       if (resUnidades.ok) {
-        // 🚨 SOLUCIÓN AQUÍ: Forzamos la respuesta como 'any' temporalmente para que TypeScript no rompa el Build de Vercel
         const payload = await resUnidades.json() as any;
         
-        if (payload && payload.unidades) {
-          setUnidades(Array.isArray(payload.unidades) ? payload.unidades : []);
+        // BLINDAJE 1: Mapeo ultra seguro para las unidades
+        if (payload && payload.unidades && Array.isArray(payload.unidades)) {
+          setUnidades(payload.unidades);
+        } else if (payload && Array.isArray(payload)) {
+          setUnidades(payload);
         } else {
-          setUnidades(Array.isArray(payload) ? payload : []);
+          setUnidades([]);
         }
 
+        // BLINDAJE 2: Mapeo ultra seguro para el resumen analítico
         if (payload && payload.resumen) {
           setResumen({
             totalRecaudado: Number(payload.resumen.totalRecaudado) || 0,
             porCobrar: Number(payload.resumen.porCobrar) || 0,
             morosidad: Number(payload.resumen.morosidad) || 0
           });
+        } else if (payload && payload.totalRecaudado !== undefined) {
+          setResumen({
+            totalRecaudado: Number(payload.totalRecaudado) || 0,
+            porCobrar: Number(payload.porCobrar) || 0,
+            morosidad: Number(payload.morosidad) || 0
+          });
         } else {
           setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
         }
+      } else {
+        setUnidades([]);
+        setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
       }
 
+      // Cargar Catálogo de cuotas vinculadas
       const resCuotas = await fetch(`${API_BASE_URL}/api/admin/cuotas?condominioId=${condominioSeleccionadoId}`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
@@ -155,6 +168,7 @@ export default function FinanzasDashboardPage() {
       }
     } catch (error) {
       console.error("Error al cargar datos del condominio:", error);
+      setUnidades([]);
       setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
     } finally {
       setCargandoUnidades(false);
@@ -171,13 +185,14 @@ export default function FinanzasDashboardPage() {
   const handleCrearCuota = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!condominioSeleccionadoId) return alert("Selecciona un condominio primero.");
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/admin/cuotas`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("token")}`,
+          "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify({
           condominioId: condominioSeleccionadoId,
@@ -202,12 +217,13 @@ export default function FinanzasDashboardPage() {
   // 4. Disparar cargos masivos
   const handleGenerarCargosMasivos = async () => {
     if (!cuotaSeleccionadaId) return alert("Selecciona una cuota del catálogo.");
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     try {
       const res = await fetch(`${API_BASE_URL}/api/admin/generar-cargos-mes`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("token")}`,
+          "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify({
           cuotaId: cuotaSeleccionadaId,
@@ -226,10 +242,11 @@ export default function FinanzasDashboardPage() {
 
   // 5. Registrar pago directo
   const handleRegistrarPago = async (cargoId: string) => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     try {
       const res = await fetch(`${API_BASE_URL}/api/admin/cargos/${cargoId}/pagar`, {
         method: "PATCH",
-        headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+        headers: { "Authorization": `Bearer ${token}` }
       });
       if (res.ok) {
         cargarDatosDelCondominio();
@@ -241,11 +258,13 @@ export default function FinanzasDashboardPage() {
     }
   };
 
-  // Filtrado lógico local en Frontend
-  const unidadesFiltradas = (unidades || []).filter((u) => {
-    const nombreUnidad = u?.unidad ? String(u.unidad) : "";
+  // Filtrado lógico local en Frontend con protecciones adicionales contra campos nulos
+  const seguroUnidades = Array.isArray(unidades) ? unidades : [];
+  const unidadesFiltradas = seguroUnidades.filter((u) => {
+    if (!u) return false;
+    const nombreUnidad = u.unidad ? String(u.unidad) : "";
     const coincideBusqueda = nombreUnidad.toLowerCase().includes(busqueda.toLowerCase());
-    const coincideEstatus = filtroEstatus === "TODOS" || u?.estatus === filtroEstatus;
+    const coincideEstatus = filtroEstatus === "TODOS" || u.estatus === filtroEstatus;
     return coincideBusqueda && coincideEstatus;
   });
 
@@ -275,7 +294,7 @@ export default function FinanzasDashboardPage() {
               <option value="">Cargando propiedades...</option>
             ) : (
               condominios.map((c) => (
-                <option key={c.id} value={c.id}>{c.nombre}</option>
+                <option key={c.id} value={c.id}>{c.nombre || "Sin Nombre"}</option>
               ))
             )}
           </select>
@@ -430,34 +449,37 @@ export default function FinanzasDashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {unidadesFiltradas.map((u) => (
-                  <tr key={u.id} className="hover:bg-slate-800/30 transition-colors">
-                    <td className="p-4 font-mono text-xs text-blue-400">{u.id}</td>
-                    <td className="p-4 font-semibold text-white">Depto {u?.unidad || "S/N"}</td>
-                    <td className="p-4 font-medium text-slate-300">
-                      ${(u?.monto || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
-                    </td>
-                    <td className="p-4 text-center">
-                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${obtenerEstiloEstatus(u?.estatus)}`}>
-                        {u?.estatus || "PENDIENTE"}
-                      </span>
-                    </td>
-                    <td className="p-4 text-center">
-                      {u?.cargoId && u?.estatus !== "PAGADO" ? (
-                        <button
-                          onClick={() => handleRegistrarPago(u.cargoId!)}
-                          className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-3 py-1 rounded-md text-xs transition shadow-sm"
-                        >
-                          Liquidar Deuda
-                        </button>
-                      ) : u?.estatus === "PAGADO" ? (
-                        <span className="text-emerald-400 text-xs font-medium">✅ Al corriente</span>
-                      ) : (
-                        <span className="text-slate-500 text-xs">Sin cargos activos</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {unidadesFiltradas.map((u) => {
+                  if (!u) return null;
+                  return (
+                    <tr key={u.id} className="hover:bg-slate-800/30 transition-colors">
+                      <td className="p-4 font-mono text-xs text-blue-400">{u.id}</td>
+                      <td className="p-4 font-semibold text-white">Depto {u.unidad || "S/N"}</td>
+                      <td className="p-4 font-medium text-slate-300">
+                        ${(u.monto || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${obtenerEstiloEstatus(u.estatus)}`}>
+                          {u.estatus || "PENDIENTE"}
+                        </span>
+                      </td>
+                      <td className="p-4 text-center">
+                        {u.cargoId && u.estatus !== "PAGADO" ? (
+                          <button
+                            onClick={() => handleRegistrarPago(u.cargoId!)}
+                            className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-3 py-1 rounded-md text-xs transition shadow-sm"
+                          >
+                            Liquidar Deuda
+                          </button>
+                        ) : u.estatus === "PAGADO" ? (
+                          <span className="text-emerald-400 text-xs font-medium">✅ Al corriente</span>
+                        ) : (
+                          <span className="text-slate-500 text-xs">Sin cargos activos</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
