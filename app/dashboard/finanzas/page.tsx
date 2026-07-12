@@ -44,6 +44,39 @@ export default function FinanzasDashboardPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
+  // 💳 ESCUCHA DE RETORNO EXITOSO DE STRIPE (CONCILIACIÓN AUTOMÁTICA)
+  useEffect(() => {
+    if (mounted) {
+      const queryParams = new URLSearchParams(window.location.search);
+      const pagoExitoso = queryParams.get("pago_exitoso");
+      const cargoId = queryParams.get("cargoId");
+
+      if (pagoExitoso === "true" && cargoId) {
+        const conciliarPagoStripe = async () => {
+          try {
+            const res = await fetch(`${API_BASE_URL}/api/admin/cargos/${cargoId}/pagar`, {
+              method: "PATCH",
+              headers: { 
+                "Content-Type": "application/json", 
+                "Authorization": `Bearer ${localStorage.getItem("token")}` 
+              }
+            });
+            if (res.ok) {
+              alert("🎉 ¡Pago recibido y conciliado automáticamente por Stripe Checkout!");
+              window.history.replaceState({}, document.title, window.location.pathname);
+              if (condominioSeleccionadoId) {
+                cargarDatosDelCondominio(condominioSeleccionadoId);
+              } else {
+                cargarCatalogoCondominios();
+              }
+            }
+          } catch (e) { console.error("Error al conciliar con Stripe:", e); }
+        };
+        conciliarPagoStripe();
+      }
+    }
+  }, [mounted, condominioSeleccionadoId]);
+
   const formatoMoneda = (val: number) => {
     return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(val);
   };
@@ -174,7 +207,6 @@ export default function FinanzasDashboardPage() {
     } catch (e) { console.error(e); } finally { setEjecutandoAccion(false); }
   };
 
-  // MEJORA 2: Generación nativa de recibo contable oficial en PDF/Impresión
   const emitirReciboPDFNativo = (item: DesgloseCargo) => {
     const ventanaImpresion = window.open("", "_blank");
     if (!ventanaImpresion) return;
@@ -186,7 +218,7 @@ export default function FinanzasDashboardPage() {
           <style>
             body { font-family: Arial, sans-serif; padding: 40px; color: #333; }
             .recibo-card { border: 2px solid #ddd; padding: 30px; border-radius: 12px; max-width: 600px; margin: auto; }
-            .header { border-b: 2px solid #f0f0f0; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; }
+            .header { border-bottom: 2px solid #f0f0f0; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; }
             .title { font-size: 22px; font-weight: bold; color: #0f172a; }
             .monto { font-size: 26px; color: #10b981; font-weight: bold; margin: 20px 0; }
             .footer { font-size: 11px; color: #777; text-align: center; margin-top: 30px; border-top: 1px dashed #ddd; padding-top: 15px; }
@@ -237,7 +269,6 @@ export default function FinanzasDashboardPage() {
   const deudasPendientes = itemsDesglose.filter(i => i.estado !== "PAGADO");
   const deudasLiquidadas = itemsDesglose.filter(i => i.estado === "PAGADO");
 
-  // MEJORA 4: Variables calculadas para alimentar las gráficas reactivas CSS de Tailwind
   const totalProyectado = resumen.totalRecaudado + resumen.porCobrar;
   const porcentajeRecaudado = totalProyectado > 0 ? Math.round((resumen.totalRecaudado / totalProyectado) * 100) : 0;
   const porcentajePendiente = totalProyectado > 0 ? Math.round((resumen.porCobrar / totalProyectado) * 100) : 0;
@@ -276,15 +307,17 @@ export default function FinanzasDashboardPage() {
                             <p className="font-semibold text-white">{item.concepto}</p>
                             <p className="text-[10px] text-slate-500">Vence: {item.vencimiento}</p>
                           </div>
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
                             <span className="font-bold text-amber-400 font-mono">{formatoMoneda(item.monto)}</span>
-                            <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${obtenerEstiloEstatus(item.estado)}`}>{item.estado}</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${obtenerEstiloEstatus(item.estado)}`}>{item.estado}</span>
                             
-                            {/* MEJORA 3: Enlace directo a Pasarela de Pagos Digitales Stripe */}
-                            {item.urlPagoDigital && (
-                              <a href={item.urlPagoDigital} target="_blank" rel="noopener noreferrer" className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-2 py-1 rounded text-[10px] transition">
+                            {/* LINK OFICIAL DE STRIPE CHECKOUT API */}
+                            {item.urlPagoDigital ? (
+                              <a href={item.urlPagoDigital} className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-2 py-1 rounded text-[10px] transition text-center shadow-sm">
                                 Link de Pago 💳
                               </a>
+                            ) : (
+                              <span className="text-[9px] text-slate-600 italic">No disponible</span>
                             )}
                             
                             <button onClick={() => setCargoIdEspecifico(item.cargoId)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-3 py-1 rounded text-[10px] transition shadow-sm">Cobrar</button>
@@ -295,7 +328,7 @@ export default function FinanzasDashboardPage() {
                   )}
                 </div>
 
-                {/* 2. SECCIÓN DE HISTORIAL LIQUIDADO + EMISIÓN PDF (Mejora 2) */}
+                {/* 2. SECCIÓN DE HISTORIAL LIQUIDADO */}
                 <div className="space-y-3 pt-2 border-t border-slate-800">
                   <p className="text-xs text-emerald-400 uppercase font-bold tracking-wider">✅ Historial de Pagos Liquidados</p>
                   {deudasLiquidadas.length === 0 ? (
@@ -312,7 +345,6 @@ export default function FinanzasDashboardPage() {
                             <span className="font-medium text-emerald-400 font-mono">{formatoMoneda(item.monto)}</span>
                             <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${obtenerEstiloEstatus(item.estado)}`}>{item.estado}</span>
                             
-                            {/* MEJORA 2: Botón contable para disparar recibo oficial PDF */}
                             <button onClick={() => emitirReciboPDFNativo(item)} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white px-2 py-1 rounded text-[10px] font-medium transition">
                               Recibo PDF 📄
                             </button>
@@ -348,7 +380,7 @@ export default function FinanzasDashboardPage() {
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-100">Panel Financiero de Administración</h1>
-          <p className="text-slate-400 text-sm">Flujos analíticos, moratorias automáticas y reportería unificada.</p>
+          <p className="text-slate-400 text-sm">Flujos analíticos, pasarela Stripe activa y moratorias automáticas.</p>
         </div>
         <div className="w-full sm:w-72 bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">🏢 Condominio Activo</label>
@@ -358,7 +390,7 @@ export default function FinanzasDashboardPage() {
         </div>
       </header>
 
-      {/* KPIS DE RESUMEN */}
+      {/* KPIS */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-1">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Total Recaudado</p>
@@ -369,16 +401,15 @@ export default function FinanzasDashboardPage() {
           <p className="text-2xl font-bold text-amber-400">{formatoMoneda(resumen.porCobrar)}</p>
         </div>
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-1">
-          <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Morosidad General</p>
+          <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Morosidad</p>
           <p className="text-2xl font-bold text-rose-400">{resumen.morosidad}%</p>
         </div>
       </section>
 
-      {/* MEJORA 4: COMPONENTE DE GRÁFICA INTERACTIVA CON TAILWIND CSS PURO */}
+      {/* GRÁFICA TAILWIND CSS */}
       <section className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4">
         <h2 className="text-base font-semibold text-slate-200">📊 Gráfica de Tendencia de Ingresos (Periodo Activo)</h2>
         <div className="space-y-4 pt-2">
-          {/* Barra de Recaudado */}
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-slate-400">
               <span>Flujo de Caja Real (Recaudado)</span>
@@ -388,7 +419,6 @@ export default function FinanzasDashboardPage() {
               <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${porcentajeRecaudado}%` }}></div>
             </div>
           </div>
-          {/* Barra de Por Cobrar */}
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-slate-400">
               <span>Cuentas por Cobrar Activas</span>
