@@ -12,7 +12,6 @@ export default function FinanzasDashboardPage() {
   const API_BASE_URL = "https://backend-condominios.onrender.com";
 
   const [mounted, setMounted] = useState(false);
-  const [errorSesion, setErrorSesion] = useState<string | null>(null);
 
   const [condominios, setCondominios] = useState<Condominio[]>([]);
   const [condominioSeleccionadoId, setCondominioSeleccionadoId] = useState("");
@@ -43,6 +42,13 @@ export default function FinanzasDashboardPage() {
   const [montoAbono, setMontoAbono] = useState("");
 
   useEffect(() => { setMounted(true); }, []);
+
+  // Efecto para cargar datos cuando cambie el condominio seleccionado
+  useEffect(() => {
+    if (mounted && condominioSeleccionadoId && condominioSeleccionadoId !== "null" && condominioSeleccionadoId !== "undefined") {
+      cargarDatosDelCondominio(condominioSeleccionadoId);
+    }
+  }, [mounted, condominioSeleccionadoId]);
 
   // Conciliación de retorno automático de Stripe
   useEffect(() => {
@@ -131,7 +137,7 @@ export default function FinanzasDashboardPage() {
       }
     } catch (error) {
       console.error(error);
-    } finally { setCargandoUnidades(false); } // 🛠️ Corregido: "finally" escrito de forma correcta
+    } finally { setCargandoUnidades(false); }
   };
 
   const abrirGestorCobroDetallado = async (unidadId: string) => {
@@ -251,9 +257,13 @@ export default function FinanzasDashboardPage() {
   };
 
   const seguroUnidades = Array.isArray(unidades) ? unidades : [];
+  
+  // 🛡️ Filtro optimizado: Permite buscar tanto el número limpio (ej. "101") como texto combinado (ej. "Depto 101")
   const unidadesFiltradas = seguroUnidades.filter((u) => {
     if (!u) return false;
-    const coincideBusqueda = String(u.unidad).toLowerCase().includes(busqueda.toLowerCase());
+    const textoCompleto = `depto ${String(u.unidad).toLowerCase()}`;
+    const coincideBusqueda = String(u.unidad).toLowerCase().includes(busqueda.toLowerCase()) || 
+                             textoCompleto.includes(busqueda.toLowerCase());
     const coincideEstatus = filtroEstatus === "TODOS" || u.estatus === filtroEstatus;
     return coincideBusqueda && coincideEstatus;
   });
@@ -374,6 +384,7 @@ export default function FinanzasDashboardPage() {
         <div className="w-full sm:w-72 bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">🏢 Condominio Activo</label>
           <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none cursor-pointer" value={condominioSeleccionadoId} onChange={(e) => setCondominioSeleccionadoId(e.target.value)}>
+            {condominios.length === 0 && <option value="">Cargando condominios...</option>}
             {condominios.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
         </div>
