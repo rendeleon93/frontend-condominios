@@ -32,6 +32,7 @@ interface ResumenFinanciero {
 export default function FinanzasDashboardPage() {
   const API_BASE_URL = "https://backend-condominios.onrender.com";
 
+  // Estado para verificar el montaje seguro en el cliente y evitar Hydration Errors
   const [mounted, setMounted] = useState(false);
   const [errorSesion, setErrorSesion] = useState<string | null>(null);
 
@@ -41,7 +42,7 @@ export default function FinanzasDashboardPage() {
   const [cargandoCondos, setCargandoCondos] = useState(true);
   const [cuotasDisponibles, setCuotasDisponibles] = useState<CuotaCatalogo[]>([]);
 
-  // Estado inicial de KPIs protegido
+  // Estado inicial fuertemente protegido para el resumen de KPIs
   const [resumen, setResumen] = useState<ResumenFinanciero>({
     totalRecaudado: 0,
     porCobrar: 0,
@@ -54,16 +55,18 @@ export default function FinanzasDashboardPage() {
   const [busqueda, setBusqueda] = useState("");
   const [filtroEstatus, setFiltroEstatus] = useState("TODOS");
 
-  // Estados de formularios
+  // Estados de formularios (Paso 1: Crear Concepto)
   const [nombreCuota, setNombreCuota] = useState("");
   const [monto, setMonto] = useState("");
   const [diaVencimiento, setDiaVencimiento] = useState("10");
   const [tipoCuota, setTipoCuota] = useState("MANTENIMIENTO_ORDINARIO");
 
+  // Estados de cargos masivos (Paso 2: Disparar Facturación)
   const [cuotaSeleccionadaId, setCuotaSeleccionadaId] = useState("");
   const [mesSeleccionado, setMesSeleccionado] = useState("7");
   const [anioSeleccionado, setAnioSeleccionado] = useState("2026");
 
+  // Activar montaje seguro en el cliente
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -78,7 +81,7 @@ export default function FinanzasDashboardPage() {
     return estilos[estatus] || "bg-slate-800 text-slate-400";
   };
 
-  // 1. Cargar condominios protegiendo contra errores 403
+  // 1. Cargar catálogo de condominios al inicializar
   useEffect(() => {
     if (!mounted) return;
     const cargarCatalogoCondominios = async () => {
@@ -88,7 +91,7 @@ export default function FinanzasDashboardPage() {
         const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
         
         if (!token) {
-          setErrorSesion("Token de sesión inexistente. Por favor, inicia sesión de nuevo.");
+          setErrorSesion("Token de sesión inexistente. Por favor, inicia sesión.");
           setCargandoCondos(false);
           return;
         }
@@ -98,7 +101,7 @@ export default function FinanzasDashboardPage() {
         });
 
         if (res.status === 403 || res.status === 401) {
-          setErrorSesion("Tu sesión ha expirado o no tienes permisos suficientes (Error 403).");
+          setErrorSesion("Tu sesión ha expirado o no tienes permisos (Error 403).");
           return;
         }
 
@@ -118,7 +121,7 @@ export default function FinanzasDashboardPage() {
     cargarCatalogoCondominios();
   }, [mounted]);
 
-  // 2. Extraer información financiera completa protegiendo desvíos
+  // 2. Extraer información financiera completa del condominio seleccionado
   const cargarDatosDelCondominio = async () => {
     if (!condominioSeleccionadoId) {
       setUnidades([]);
@@ -129,10 +132,10 @@ export default function FinanzasDashboardPage() {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
     try {
-    // 🚨 BUSCA ESTA LÍNEA EXACTA EN TU page.tsx DEL FRONTEND Y CAMBIA LA URL ASÍ:
-const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominioSeleccionadoId}/analiticas`, {
-  headers: { "Authorization": `Bearer ${token}` },
-});
+      // 🔗 Conectado de forma precisa a la nueva ruta /analiticas de tu backend
+      const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominioSeleccionadoId}/analiticas`, {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
       
       if (resUnidades.status === 403 || resUnidades.status === 401) {
         setErrorSesion("Sesión inválida al consultar datos financieros.");
@@ -142,7 +145,7 @@ const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominio
       if (resUnidades.ok) {
         const payload = await resUnidades.json() as any;
         
-        // Asignación con fallbacks obligatorios de arreglos
+        // Mapeo ultra seguro de unidades
         if (payload && payload.unidades && Array.isArray(payload.unidades)) {
           setUnidades(payload.unidades);
         } else if (payload && Array.isArray(payload)) {
@@ -151,6 +154,7 @@ const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominio
           setUnidades([]);
         }
 
+        // Mapeo seguro del resumen analítico para los KPIs
         if (payload && payload.resumen) {
           setResumen({
             totalRecaudado: Number(payload.resumen.totalRecaudado) || 0,
@@ -161,9 +165,23 @@ const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominio
           setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
         }
       }
+
+      // Cargar catálogo de cuotas para el selector masivo
+      const resCuotas = await fetch(`${API_BASE_URL}/api/admin/cuotas?condominioId=${condominioSeleccionadoId}`, {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      if (resCuotas.ok) {
+        const dataCuotas = await resCuotas.json();
+        if (Array.isArray(dataCuotas)) {
+          setCuotasDisponibles(dataCuotas);
+          if (dataCuotas.length > 0) setCuotaSeleccionadaId(dataCuotas[0].id);
+          else setCuotaSeleccionadaId("");
+        }
+      }
     } catch (error) {
       console.error("Error financiero:", error);
       setUnidades([]);
+      setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
     } finally {
       setCargandoUnidades(false);
     }
@@ -175,45 +193,71 @@ const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominio
     }
   }, [condominioSeleccionadoId, mounted]);
 
-  if (!mounted) {
-    return <div className="p-6 text-center text-slate-500 text-sm">Cargando Panel...</div>;
-  }
+  // 3. Crear Concepto Base
+  const handleCrearCuota = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!condominioSeleccionadoId) return alert("Selecciona un condominio primero.");
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-  // 🚨 VISTA INTERRUPTORA SI HAY ERROR DE AUTENTICACIÓN: Evita pantallas negras corporativas
-  if (errorSesion) {
-    return (
-      <div className="p-12 max-w-md mx-auto my-20 bg-slate-900 border border-slate-800 rounded-xl text-center space-y-4">
-        <p className="text-amber-400 text-xl font-bold">⚠️ Control de Acceso</p>
-        <p className="text-slate-300 text-sm">{errorSesion}</p>
-        <button 
-          onClick={() => window.location.href = "/"} 
-          className="bg-amber-500 text-slate-950 font-bold px-4 py-2 rounded-lg text-sm hover:bg-amber-600 transition"
-        >
-          Regresar al Login
-        </button>
-      </div>
-    );
-  }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/cuotas`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          condominioId: condominioSeleccionadoId,
+          nombre: nombreCuota,
+          monto: Number(monto),
+          tipo: tipoCuota,
+          diaVencimiento: Number(diaVencimiento),
+        }),
+      });
 
-  const seguroUnidades = Array.isArray(unidades) ? unidades : [];
-  const unidadesFiltradas = seguroUnidades.filter((u) => {
-    if (!u) return false;
-    const nombreUnidad = u.unidad ? String(u.unidad) : "";
-    return nombreUnidad.toLowerCase().includes(busqueda.toLowerCase());
-  });
+      if (res.ok) {
+        alert("🎉 Concepto integrado al catálogo.");
+        setNombreCuota("");
+        setMonto("");
+        cargarDatosDelCondominio();
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
-  return (
-    <div className="p-6 max-w-6xl mx-auto space-y-8 bg-slate-950 text-white min-h-screen font-sans">
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-100">Panel Financiero de Administración</h1>
-          <p className="text-slate-400 text-sm">Sigmato PropTech en línea.</p>
-        </div>
-      </header>
+  // 4. Disparar Facturación Masiva del Mes
+  const handleGenerarCargosMasivos = async () => {
+    if (!cuotaSeleccionadaId) return alert("Selecciona una cuota del catálogo.");
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/generar-cargos-mes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          cuotaId: cuotaSeleccionadaId,
+          anio: anioSeleccionado,
+          mes: mesSeleccionado,
+        }),
+      });
+      if (res.ok) {
+        alert("⚡ Cargos masivos generados con éxito.");
+        cargarDatosDelCondominio();
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
-      <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 text-center text-slate-400 text-sm">
-        🔒 Panel financiero listo y conectado a la API de Render.
-      </div>
-    </div>
-  );
-}
+  // 5. Acción Rápida: Liquidar Deuda
+  const handleRegistrarPago = async (cargoId: string) => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/cargos/${cargoId}/pagar`, {
+        method: "PATCH",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok
