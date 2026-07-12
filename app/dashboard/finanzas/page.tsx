@@ -2,32 +2,10 @@
 
 import { useState, useEffect } from "react";
 
-interface Condominio {
-  id: string;
-  nombre: string;
-  direccion: string;
-}
-
-interface CuotaCatalogo {
-  id: string;
-  nombre: string;
-  monto: number;
-  tipo: string;
-}
-
-interface UnidadFinanciera {
-  id: string;
-  unidad: string;
-  estatus: "PENDIENTE" | "PAGADO" | "PARCIAL" | "VENCIDO";
-  monto: number;
-  cargoId: string | null;
-}
-
-interface ResumenFinanciero {
-  totalRecaudado: number;
-  porCobrar: number;
-  morosidad: number;
-}
+interface Condominio { id: string; nombre: string; }
+interface CuotaCatalogo { id: string; nombre: string; monto: number; }
+interface UnidadFinanciera { id: string; unidad: string; estatus: "PENDIENTE" | "PAGADO" | "PARCIAL" | "VENCIDO"; monto: number; cargoId: string | null; fechaPago?: string | null; }
+interface ResumenFinanciero { totalRecaudado: number; porCobrar: number; morosidad: number; }
 
 export default function FinanzasDashboardPage() {
   const API_BASE_URL = "https://backend-condominios.onrender.com";
@@ -37,20 +15,19 @@ export default function FinanzasDashboardPage() {
 
   const [condominios, setCondominios] = useState<Condominio[]>([]);
   const [condominioSeleccionadoId, setCondominioSeleccionadoId] = useState("");
-  const [cargandoCondos, setCargandoCondos] = useState(true);
   const [cuotasDisponibles, setCuotasDisponibles] = useState<CuotaCatalogo[]>([]);
 
-  const [resumen, setResumen] = useState<ResumenFinanciero>({
-    totalRecaudado: 0,
-    porCobrar: 0,
-    morosidad: 0
-  });
-
+  const [resumen, setResumen] = useState<ResumenFinanciero>({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
   const [unidades, setUnidades] = useState<UnidadFinanciera[]>([]);
+  
+  // Estados de loaders (Mejora 3)
   const [cargandoUnidades, setCargandoUnidades] = useState(false);
+  const [ejecutandoAccion, setEjecutandoAccion] = useState(false);
+
   const [busqueda, setBusqueda] = useState("");
   const [filtroEstatus, setFiltroEstatus] = useState("TODOS");
 
+  // Formularios
   const [nombreCuota, setNombreCuota] = useState("");
   const [monto, setMonto] = useState("");
   const [diaVencimiento, setDiaVencimiento] = useState("10");
@@ -60,9 +37,16 @@ export default function FinanzasDashboardPage() {
   const [mesSeleccionado, setMesSeleccionado] = useState("7");
   const [anioSeleccionado, setAnioSeleccionado] = useState("2026");
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // Modal de Pago Parcial (Mejora 2)
+  const [cargoSeleccionadoModal, setCargoSeleccionadoModal] = useState<string | null>(null);
+  const [montoAbono, setMontoAbono] = useState("");
+
+  useEffect(() => { setMounted(true); }, []);
+
+  // Formateador robusto de moneda (Mejora 1)
+  const formatoMoneda = (val: number) => {
+    return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(val);
+  };
 
   const obtenerEstiloEstatus = (estatus: UnidadFinanciera["estatus"]) => {
     const estilos = {
@@ -74,352 +58,262 @@ export default function FinanzasDashboardPage() {
     return estilos[estatus] || "bg-slate-800 text-slate-400";
   };
 
-  // 1. Cargar catálogo inicial de condominios
-  useEffect(() => {
-    if (!mounted) return;
-    const cargarCatalogoCondominios = async () => {
-      setCargandoCondos(true);
-      setErrorSesion(null);
-      try {
-        const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-        if (!token) {
-          setErrorSesion("Token de sesión inexistente. Por favor, inicia sesión.");
-          setCargandoCondos(false);
-          return;
+  const cargarCatalogoCondominios = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_BASE_URL}/api/admin/condominios`, { headers: { "Authorization": `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.length > 0) {
+          setCondominios(data);
+          setCondominioSeleccionadoId(String(data[0].id));
         }
-        const res = await fetch(`${API_BASE_URL}/api/admin/condominios`, {
-          headers: { "Authorization": `Bearer ${token}` },
-        });
-        if (res.status === 403 || res.status === 401) {
-          setErrorSesion("Tu sesión ha expirado o no tienes permisos (Error 403).");
-          return;
-        }
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) {
-            setCondominios(data);
-            // Aseguramos que guarde un ID válido desde el primer instante
-            if (data[0] && data[0].id) {
-              setCondominioSeleccionadoId(String(data[0].id));
-            }
-          }
-        }
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setCargandoCondos(false);
       }
-    };
-    cargarCatalogoCondominios();
-  }, [mounted]);
+    } catch (e) { console.error(e); }
+  };
 
-  // 2. Cargar datos financieros con escudo blindado contra strings vacíos o nulos
+  useEffect(() => { if (mounted) cargarCatalogoCondominios(); }, [mounted]);
+
   const cargarDatosDelCondominio = async (idCondo: string) => {
-    // 🛡️ ESCUDO ANTI-VACÍOS DEFINITIVO: Detiene peticiones malformadas como unidades//analiticas
-    if (!idCondo || idCondo === "undefined" || idCondo.trim() === "" || idCondo === "null") {
-      return;
-    }
-    
+    if (!idCondo || idCondo === "undefined" || idCondo.trim() === "") return;
     setCargandoUnidades(true);
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const token = localStorage.getItem("token");
 
     try {
       const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${idCondo}/analiticas`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
-      
-      if (resUnidades.status === 403 || resUnidades.status === 401) {
-        setErrorSesion("Sesión inválida al consultar datos financieros.");
-        return;
-      }
-
       if (resUnidades.ok) {
         const payload = await resUnidades.json();
-        
         if (payload) {
-          if (payload.unidades && Array.isArray(payload.unidades)) {
-            setUnidades(payload.unidades);
-          } else if (Array.isArray(payload)) {
-            setUnidades(payload);
-          }
-
-          if (payload.resumen) {
-            setResumen({
-              totalRecaudado: Number(payload.resumen.totalRecaudado) || 0,
-              porCobrar: Number(payload.resumen.porCobrar) || 0,
-              morosidad: Number(payload.resumen.morosidad) || 0
-            });
-          }
+          setUnidades(payload.unidades || []);
+          setResumen(payload.resumen || { totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
         }
       }
-
       const resCuotas = await fetch(`${API_BASE_URL}/api/admin/cuotas?condominioId=${idCondo}`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
       if (resCuotas.ok) {
         const dataCuotas = await resCuotas.json();
-        if (Array.isArray(dataCuotas)) {
-          setCuotasDisponibles(dataCuotas);
-          if (dataCuotas.length > 0) setCuotaSeleccionadaId(dataCuotas[0].id);
-          else setCuotaSeleccionadaId("");
-        }
+        setCuotasDisponibles(dataCuotas || []);
+        if (dataCuotas.length > 0) setCuotaSeleccionadaId(dataCuotas[0].id);
       }
     } catch (error) {
-      console.error("Error cargando condominio:", error);
-    } finally {
-      setCargandoUnidades(false);
-    }
+      console.error(error);
+    } finally { setCargandoUnidades(false); }
   };
 
-  // Solo se ejecuta si el ID actual es completamente válido y no está vacío
   useEffect(() => {
-    if (mounted && condominioSeleccionadoId && condominioSeleccionadoId.trim() !== "" && condominioSeleccionadoId !== "undefined") {
-      cargarDatosDelCondominio(condominioSeleccionadoId);
-    }
+    if (mounted && condominioSeleccionadoId) cargarDatosDelCondominio(condominioSeleccionadoId);
   }, [condominioSeleccionadoId, mounted]);
 
   const handleCrearCuota = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!condominioSeleccionadoId) return alert("Selecciona un condominio primero.");
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-
+    setEjecutandoAccion(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/admin/cuotas`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          condominioId: condominioSeleccionadoId,
-          nombre: nombreCuota,
-          monto: Number(monto),
-          tipo: tipoCuota,
-          diaVencimiento: Number(diaVencimiento),
-        }),
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("token")}` },
+        body: JSON.stringify({ condominioId: condominioSeleccionadoId, nombre: nombreCuota, monto: Number(monto), tipo: tipoCuota, diaVencimiento: Number(diaVencimiento) }),
       });
-
       if (res.ok) {
-        alert("🎉 Concepto integrado al catálogo.");
-        setNombreCuota("");
-        setMonto("");
+        setNombreCuota(""); setMonto("");
         cargarDatosDelCondominio(condominioSeleccionadoId);
       }
-    } catch (error) {
-      console.error(error);
-    }
+    } catch (e) { console.error(e); } finally { setEjecutandoAccion(false); }
   };
 
   const handleGenerarCargosMasivos = async () => {
-    if (!cuotaSeleccionadaId) return alert("Selecciona una cuota del catálogo.");
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    setEjecutandoAccion(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/admin/generar-cargos-mes`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          cuotaId: cuotaSeleccionadaId,
-          anio: anioSeleccionado,
-          mes: mesSeleccionado,
-        }),
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("token")}` },
+        body: JSON.stringify({ cuotaId: cuotaSeleccionadaId, anio: anioSeleccionado, mes: mesSeleccionado }),
       });
       if (res.ok) {
-        alert("⚡ Cargos masivos generados con éxito.");
+        alert("⚡ Cargos mensuales aplicados correctamente sin duplicados.");
         cargarDatosDelCondominio(condominioSeleccionadoId);
       }
-    } catch (error) {
-      console.error(error);
-    }
+    } catch (e) { console.error(e); } finally { setEjecutAction(false); }
   };
 
-  const handleRegistrarPago = async (cargoId: string) => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  // Procesar abono o liquidación total (Mejora 2)
+  const procesarCobroEfectivo = async (esParcial: boolean) => {
+    if (!cargoSeleccionadoModal) return;
+    setEjecutandoAccion(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/cargos/${cargoId}/pagar`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/cargos/${cargoSeleccionadoModal}/pagar`, {
         method: "PATCH",
-        headers: { "Authorization": `Bearer ${token}` }
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("token")}` },
+        body: JSON.stringify({ montoAbono: esParcial ? Number(montoAbono) : null })
       });
       if (res.ok) {
+        setCargoSeleccionadoModal(null);
+        setMontoAbono("");
         cargarDatosDelCondominio(condominioSeleccionadoId);
       }
-    } catch (error) {
-      console.error(error);
-    }
+    } catch (e) { console.error(e); } finally { setEjecutandoAccion(false); }
   };
 
-  if (!mounted) {
-    return <div className="p-6 text-center text-slate-500 text-sm">Cargando Panel...</div>;
-  }
-
-  if (errorSesion) {
-    return (
-      <div className="p-12 max-w-md mx-auto my-20 bg-slate-900 border border-slate-800 rounded-xl text-center space-y-4">
-        <p className="text-amber-400 text-xl font-bold">⚠️ Control de Acceso</p>
-        <p className="text-slate-300 text-sm">{errorSesion}</p>
-        <button onClick={() => window.location.href = "/"} className="bg-amber-500 text-slate-950 font-bold px-4 py-2 rounded-lg text-sm hover:bg-amber-600 transition">
-          Regresar al Login
-        </button>
-      </div>
-    );
-  }
+  // Exportación nativa a CSV (Mejora 4)
+  const exportarDataCSV = () => {
+    const encabezados = ["ID Sistema", "Unidad", "Monto Restante", "Estatus", "Ultima Actualizacion\n"];
+    const filas = unidadesFiltradas.map(u => `${u.id},Depto ${u.unidad},${u.monto},${u.estatus},${u.fechaPago ? new Date(u.fechaPago).toLocaleDateString() : "Sin pagos"}\n`);
+    
+    const blob = new Blob([encabezados.join(",") + filas.join("")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `Auditoria_Finanzas_${condominioSeleccionadoId}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const seguroUnidades = Array.isArray(unidades) ? unidades : [];
   const unidadesFiltradas = seguroUnidades.filter((u) => {
     if (!u) return false;
-    const nombreUnidad = u.unidad ? String(u.unidad) : "";
-    const coincideBusqueda = nombreUnidad.toLowerCase().includes(busqueda.toLowerCase());
+    const coincideBusqueda = String(u.unidad).toLowerCase().includes(busqueda.toLowerCase());
     const coincideEstatus = filtroEstatus === "TODOS" || u.estatus === filtroEstatus;
     return coincideBusqueda && coincideEstatus;
   });
 
+  if (!mounted) return <div className="p-6 text-center text-slate-500">Cargando Panel...</div>;
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8 bg-slate-950 text-white min-h-screen font-sans">
+      
+      {/* MODAL DE GESTIÓN DE COBRO PARCIAL / TOTAL (Mejora 2) */}
+      {cargoSeleccionadoModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-sm w-full space-y-4">
+            <h3 className="text-lg font-bold text-slate-100">⚖️ Registrar Recepción de Pago</h3>
+            <p className="text-xs text-slate-400">Selecciona si deseas liquidar la totalidad de la cuota activa o registrar un abono parcial.</p>
+            
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-slate-400 uppercase">Monto del Abono Parcial ($)</label>
+              <input type="number" placeholder="Ej. 500" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white text-sm focus:outline-none" value={montoAbono} onChange={(e) => setMontoAbono(e.target.value)} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button onClick={() => procesarCobroEfectivo(true)} disabled={!montoAbono} className="bg-sky-500 hover:bg-sky-600 disabled:opacity-40 text-slate-950 font-bold py-2 rounded-lg text-xs transition">
+                Abonar Parcial
+              </button>
+              <button onClick={() => procesarCobroEfectivo(false)} className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2 rounded-lg text-xs transition">
+                Liquidar Total
+              </button>
+            </div>
+            <button onClick={() => setCargoSeleccionadoModal(null)} className="w-full text-center text-xs text-slate-500 hover:text-slate-300 transition">Cancelar Operación</button>
+          </div>
+        </div>
+      )}
+
       {/* HEADER */}
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-100">Panel Financiero de Administración</h1>
-          <p className="text-slate-400 text-sm">Gestiona flujos, asigna mantenimiento mensual y audita departamentos.</p>
+          <p className="text-slate-400 text-sm">Auditoría, flujos de caja y facturaciones en bloque.</p>
         </div>
 
         <div className="w-full sm:w-72 bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">🏢 Condominio Activo</label>
-          <select
-            className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none cursor-pointer"
-            value={condominioSeleccionadoId}
-            onChange={(e) => setCondominioSeleccionadoId(e.target.value)}
-          >
-            {condominios.length === 0 ? (
-              <option value="">Cargando propiedades...</option>
-            ) : (
-              condominios.map((c) => (
-                <option key={c.id} value={c.id}>{c.nombre || "Sin Nombre"}</option>
-              ))
-            )}
+          <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none cursor-pointer" value={condominioSeleccionadoId} onChange={(e) => setCondominioSeleccionadoId(e.target.value)}>
+            {condominios.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
         </div>
       </header>
 
-      {/* TARJETAS KPI */}
+      {/* METRICAS KPI CON FORMATEO PROFESIONAL (Mejora 1) */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-        <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
+        <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-1">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Total Recaudado</p>
-          <p className="text-2xl font-bold text-emerald-400">${resumen.totalRecaudado}.00 MXN</p>
+          <p className="text-2xl font-bold text-emerald-400">{formatoMoneda(resumen.totalRecaudado)}</p>
         </div>
-        <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
+        <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-1">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Por Cobrar</p>
-          <p className="text-2xl font-bold text-amber-400">${resumen.porCobrar}.00 MXN</p>
+          <p className="text-2xl font-bold text-amber-400">{formatoMoneda(resumen.porCobrar)}</p>
         </div>
-        <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
-          <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Morosidad</p>
+        <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-1">
+          <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Morosidad General</p>
           <p className="text-2xl font-bold text-rose-400">{resumen.morosidad}%</p>
         </div>
       </section>
 
-      {/* SECCIÓN ACCIONES */}
+      {/* SECCIONES OPERATIVAS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4">
-          <h2 className="text-lg font-semibold text-amber-400 flex items-center gap-2">📋 1. Crear Concepto Base</h2>
-          <form onSubmit={handleCrearCuota} className="space-y-4 text-sm">
-            <input
-              type="text"
-              placeholder="Ej. Mantenimiento Regular Torres"
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500"
-              value={nombreCuota}
-              onChange={(e) => setNombreCuota(e.target.value)}
-              required
-            />
-            <div className="grid grid-cols-2 gap-4">
-              <input
-                type="number"
-                placeholder="Monto Fijo ($)"
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500"
-                value={monto}
-                onChange={(e) => setMonto(e.target.value)}
-                required
-              />
-              <input
-                type="number"
-                min="1"
-                max="28"
-                placeholder="Día límite"
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500"
-                value={diaVencimiento}
-                onChange={(e) => setDiaVencimiento(e.target.value)}
-                required
-              />
+          <h2 className="text-base font-semibold text-amber-400">📋 1. Registrar Concepto Catálogo</h2>
+          <form onSubmit={handleCrearCuota} className="space-y-3 text-sm">
+            <input type="text" placeholder="Ej. Mantenimiento Julio Torres" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={nombreCuota} onChange={(e) => setNombreCuota(e.target.value)} required />
+            <div className="grid grid-cols-2 gap-2">
+              <input type="number" placeholder="Monto ($)" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={monto} onChange={(e) => setMonto(e.target.value)} required />
+              <input type="number" min="1" max="28" placeholder="Día Vence" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={diaVencimiento} onChange={(e) => setDiaVencimiento(e.target.value)} required />
             </div>
-            <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={tipoCuota} onChange={(e) => setTipoCuota(e.target.value)}>
-              <option value="MANTENIMIENTO_ORDINARIO">Mantenimiento Ordinario</option>
-              <option value="EXTRAORDINARIO">Cuota Extraordinaria</option>
-            </select>
-            <button type="submit" className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2.5 rounded-lg transition">
-              Registrar en Catálogo
+            <button type="submit" disabled={ejecutandoAccion} className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-slate-950 font-bold py-2 rounded-lg text-xs transition">
+              {ejecutandoAccion ? "Procesando..." : "Agregar al Catálogo"}
             </button>
           </form>
         </div>
 
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4 flex flex-col justify-between">
-          <div className="space-y-4 text-sm">
-            <h2 className="text-lg font-semibold text-emerald-400 flex items-center gap-2">🚀 2. Disparar Facturación</h2>
+          <div className="space-y-3 text-sm">
+            <h2 className="text-base font-semibold text-emerald-400">🚀 2. Disparar Facturación Masiva</h2>
             {cuotasDisponibles.length === 0 ? (
-              <div className="text-xs bg-slate-950 border border-dashed border-slate-800 rounded-lg p-4 text-amber-400 text-center">
-                ⚠️ Registra una cuota en el Paso 1 para habilitar la facturación.
-              </div>
+              <div className="text-xs bg-slate-950 border border-dashed border-slate-800 rounded-lg p-4 text-center text-amber-400">Registra un concepto primero.</div>
             ) : (
-              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-emerald-400 font-mono focus:outline-none" value={cuotaSeleccionadaId} onChange={(e) => setCuotaSeleccionadaId(e.target.value)}>
-                {cuotasDisponibles.map((cuota) => (
-                  <option key={cuota.id} value={cuota.id}>{cuota.nombre} — ${cuota.monto} MXN</option>
-                ))}
+              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-emerald-400 font-mono" value={cuotaSeleccionadaId} onChange={(e) => setCuotaSeleccionadaId(e.target.value)}>
+                {cuotasDisponibles.map((cuota) => <option key={cuota.id} value={cuota.id}>{cuota.nombre} ({formatoMoneda(cuota.monto)})</option>)}
               </select>
             )}
-            <div className="grid grid-cols-2 gap-4">
-              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={mesSeleccionado} onChange={(e) => setMesSeleccionado(e.target.value)}>
-                <option value="7">Julio</option>
-                <option value="8">Agosto</option>
-                <option value="9">Septiembre</option>
+            <div className="grid grid-cols-2 gap-2">
+              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white" value={mesSeleccionado} onChange={(e) => setMesSeleccionado(e.target.value)}>
+                <option value="7">Julio</option><option value="8">Agosto</option>
               </select>
-              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={anioSeleccionado} onChange={(e) => setAnioSeleccionado(e.target.value)}>
+              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white" value={anioSeleccionado} onChange={(e) => setAnioSeleccionado(e.target.value)}>
                 <option value="2026">2026</option>
-                <option value="2027">2027</option>
               </select>
             </div>
           </div>
-          <button onClick={handleGenerarCargosMasivos} disabled={cuotasDisponibles.length === 0} className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2.5 rounded-lg transition mt-4 disabled:opacity-40">
-            Generar Cuentas por Cobrar
+          <button onClick={handleGenerarCargosMasivos} disabled={cuotasDisponibles.length === 0 || ejecutandoAccion} className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-slate-950 font-bold py-2 rounded-lg text-xs transition mt-2">
+            {ejecutandoAccion ? "Generando lotes de cobro..." : "Aplicar Cuentas por Cobrar Masivas"}
           </button>
         </div>
       </div>
 
-      {/* TABLA DINÁMICA DE DEPARTAMENTOS */}
+      {/* TABLA AVANZADA CON EXPORTACIÓN DIRECTA (Mejora 4) */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-md">
         <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center bg-slate-900/50">
-          <h2 className="text-xl font-semibold text-slate-200">Estatus Financiero por Departamento</h2>
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold text-slate-200">Estatus de Cuentas</h2>
+            <button onClick={exportarDataCSV} disabled={unidadesFiltradas.length === 0} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs px-3 py-1 rounded-lg text-slate-300 font-medium transition">
+              📥 Exportar Excel (CSV)
+            </button>
+          </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            <input type="text" placeholder="Buscar unidad..." className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none text-white w-full sm:w-48" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+            <input type="text" placeholder="Buscar unidad..." className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
             <select className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300" value={filtroEstatus} onChange={(e) => setFiltroEstatus(e.target.value)}>
               <option value="TODOS">Todos los Estatus</option>
               <option value="PENDIENTE">Pendientes</option>
               <option value="PAGADO">Pagados</option>
+              <option value="PARCIAL">Parciales</option>
               <option value="VENCIDO">Vencidos</option>
             </select>
           </div>
         </div>
 
         {cargandoUnidades ? (
-          <div className="p-12 text-center text-slate-500 text-sm animate-pulse">⏳ Extrayendo registros financieros...</div>
+          <div className="p-12 text-center text-slate-500 text-sm animate-pulse">⏳ Extrayendo flujos financieros de la base de datos...</div>
         ) : unidadesFiltradas.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 text-sm">📭 No se encontraron registros financieros.</div>
+          <div className="p-12 text-center text-slate-500 text-sm">📭 No hay registros para mostrar con los filtros aplicados.</div>
         ) : (
           <div className="overflow-x-auto text-xs sm:text-sm">
             <table className="w-full text-left text-slate-300">
               <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
                 <tr>
                   <th className="p-4">ID Sistema</th>
-                  <th className="p-4">Departamento</th>
-                  <th className="p-4">Último Cargo</th>
+                  <th className="p-4">Unidad</th>
+                  <th className="p-4">Saldo Pendiente</th>
                   <th className="p-4 text-center">Estatus</th>
                   <th className="p-4 text-center">Acciones</th>
                 </tr>
@@ -427,26 +321,25 @@ export default function FinanzasDashboardPage() {
               <tbody className="divide-y divide-slate-800/60">
                 {unidadesFiltradas.map((u) => {
                   if (!u) return null;
-                  const montoUnidad = u.monto ? Number(u.monto) : 0;
                   return (
                     <tr key={u.id} className="hover:bg-slate-800/30 transition-colors">
                       <td className="p-4 font-mono text-xs text-blue-400">{u.id}</td>
-                      <td className="p-4 font-semibold text-white">Depto {u.unidad || "S/N"}</td>
-                      <td className="p-4 font-medium text-slate-300">${montoUnidad}.00 MXN</td>
+                      <td className="p-4 font-semibold text-white">Depto {u.unidad}</td>
+                      <td className="p-4 font-medium text-slate-300">{formatoMoneda(u.monto)}</td>
                       <td className="p-4 text-center">
                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${obtenerEstiloEstatus(u.estatus)}`}>
-                          {u.estatus || "PENDIENTE"}
+                          {u.estatus}
                         </span>
                       </td>
                       <td className="p-4 text-center">
                         {u.cargoId && u.estatus !== "PAGADO" ? (
-                          <button onClick={() => handleRegistrarPago(u.cargoId!)} className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-3 py-1 rounded-md text-xs transition shadow-sm">
-                            Liquidar
+                          <button onClick={() => setCargoSeleccionadoModal(u.cargoId)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-3 py-1 rounded-md text-xs transition shadow-sm">
+                            Gestionar Cobro
                           </button>
-                        ) : u.estatus === "PAGADO" ? (
-                          <span className="text-emerald-400 text-xs font-medium">✅ Al corriente</span>
                         ) : (
-                          <span className="text-slate-500 text-xs">Sin cargos</span>
+                          <span className="text-emerald-400 text-xs font-medium flex items-center justify-center gap-1">
+                            ✅ Al corriente
+                          </span>
                         )}
                       </td>
                     </tr>
