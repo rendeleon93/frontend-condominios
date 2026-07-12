@@ -111,7 +111,7 @@ export default function FinanzasDashboardPage() {
       if (resUnidades.ok) {
         const payload = await resUnidades.json();
         
-        // 🚨 SOLUCIÓN AL ERROR TYPEERROR: Extraemos correctamente el arreglo del objeto estructurado
+        // Extraemos el arreglo limpiamente
         if (payload && payload.unidades) {
           setUnidades(Array.isArray(payload.unidades) ? payload.unidades : []);
         } else {
@@ -223,7 +223,7 @@ export default function FinanzasDashboardPage() {
     }
   };
 
-  // Filtrado lógico local en Frontend
+  // Filtrado lógico local en Frontend con prevención de valores indefinidos
   const unidadesFiltradas = (unidades || []).filter((u) => {
     const nombreUnidad = u?.unidad ? String(u.unidad) : "";
     const coincideBusqueda = nombreUnidad.toLowerCase().includes(busqueda.toLowerCase());
@@ -409,24 +409,25 @@ export default function FinanzasDashboardPage() {
                 {unidadesFiltradas.map((u) => (
                   <tr key={u.id} className="hover:bg-slate-800/30 transition-colors">
                     <td className="p-4 font-mono text-xs text-blue-400">{u.id}</td>
-                    <td className="p-4 font-semibold text-white">Depto {u.unidad}</td>
+                    <td className="p-4 font-semibold text-white">Depto {u?.unidad || "S/N"}</td>
                     <td className="p-4 font-medium text-slate-300">
+                      {/* 🚨 BLINDAJE AQUÍ: Si el monto viene nulo o indefinido, usamos 0 de respaldo */}
                       ${(u?.monto || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
                     </td>
                     <td className="p-4 text-center">
-                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${obtenerEstiloEstatus(u.estatus)}`}>
-                        {u.estatus}
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${obtenerEstiloEstatus(u?.estatus)}`}>
+                        {u?.estatus || "PENDIENTE"}
                       </span>
                     </td>
                     <td className="p-4 text-center">
-                      {u.cargoId && u.estatus !== "PAGADO" ? (
+                      {u?.cargoId && u?.estatus !== "PAGADO" ? (
                         <button
                           onClick={() => handleRegistrarPago(u.cargoId!)}
                           className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-3 py-1 rounded-md text-xs transition shadow-sm"
                         >
                           Liquidar Deuda
                         </button>
-                      ) : u.estatus === "PAGADO" ? (
+                      ) : u?.estatus === "PAGADO" ? (
                         <span className="text-emerald-400 text-xs font-medium">✅ Al corriente</span>
                       ) : (
                         <span className="text-slate-500 text-xs">Sin cargos activos</span>
