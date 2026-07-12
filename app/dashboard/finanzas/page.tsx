@@ -40,7 +40,6 @@ export default function FinanzasDashboardPage() {
   const [cargandoCondos, setCargandoCondos] = useState(true);
   const [cuotasDisponibles, setCuotasDisponibles] = useState<CuotaCatalogo[]>([]);
 
-  // Estado inicial del resumen financiero
   const [resumen, setResumen] = useState<ResumenFinanciero>({
     totalRecaudado: 0,
     porCobrar: 0,
@@ -99,7 +98,8 @@ export default function FinanzasDashboardPage() {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
             setCondominios(data);
-            setCondominioSeleccionadoId(data[0].id);
+            // Fijamos de inmediato el ID del primer condominio válido encontrado
+            setCondominioSeleccionadoId(String(data[0].id));
           }
         }
       } catch (error) {
@@ -111,15 +111,14 @@ export default function FinanzasDashboardPage() {
     cargarCatalogoCondominios();
   }, [mounted]);
 
-  // 2. Cargar datos del condominio de forma reactiva y limpia
+  // 2. Cargar datos financieros con escudo protector contra "undefined"
   const cargarDatosDelCondominio = async (idCondo: string) => {
-    if (!idCondo) return;
+    // 🛡️ ESCUDO CRÍTICO: Si no hay ID real, cancelamos la petición inmediatamente
+    if (!idCondo || idCondo === "undefined" || idCondo.trim() === "") {
+      return;
+    }
     
     setCargandoUnidades(true);
-    // Limpieza previa del estado para obligar al DOM a refrescar las tarjetas superiores
-    setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
-    setUnidades([]);
-
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
     try {
@@ -135,18 +134,22 @@ export default function FinanzasDashboardPage() {
       if (resUnidades.ok) {
         const payload = await resUnidades.json();
         
-        if (payload && payload.unidades && Array.isArray(payload.unidades)) {
-          setUnidades(payload.unidades);
-        } else if (payload && Array.isArray(payload)) {
-          setUnidades(payload);
-        }
+        if (payload) {
+          // Asignar unidades de forma segura
+          if (payload.unidades && Array.isArray(payload.unidades)) {
+            setUnidades(payload.unidades);
+          } else if (Array.isArray(payload)) {
+            setUnidades(payload);
+          }
 
-        if (payload && payload.resumen) {
-          setResumen({
-            totalRecaudado: Number(payload.resumen.totalRecaudado) || 0,
-            porCobrar: Number(payload.resumen.porCobrar) || 0,
-            morosidad: Number(payload.resumen.morosidad) || 0
-          });
+          // Asignar resumen de KPIs de forma segura
+          if (payload.resumen) {
+            setResumen({
+              totalRecaudado: Number(payload.resumen.totalRecaudado) || 0,
+              porCobrar: Number(payload.resumen.porCobrar) || 0,
+              morosidad: Number(payload.resumen.morosidad) || 0
+            });
+          }
         }
       }
 
@@ -162,15 +165,15 @@ export default function FinanzasDashboardPage() {
         }
       }
     } catch (error) {
-      console.error(error);
-    } finally {
+      console.error("Error cargando condominio:", error);
+    } military {
       setCargandoUnidades(false);
     }
   };
 
-  // Escucha activa y precisa sobre el cambio del combo de condominios
+  // Escucha los cambios del selector de condominios
   useEffect(() => {
-    if (mounted && condominioSeleccionadoId) {
+    if (mounted && condominioSeleccionadoId && condominioSeleccionadoId !== "undefined") {
       cargarDatosDelCondominio(condominioSeleccionadoId);
     }
   }, [condominioSeleccionadoId, mounted]);
@@ -299,7 +302,7 @@ export default function FinanzasDashboardPage() {
         </div>
       </header>
 
-      {/* TARJETAS KPI VINCULADAS CORRECTAMENTE AL ESTADO REACTIVO */}
+      {/* TARJETAS KPI */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Total Recaudado</p>
@@ -315,7 +318,7 @@ export default function FinanzasDashboardPage() {
         </div>
       </section>
 
-      {/* COMPONENTES OPERATIVOS */}
+      {/* SECCIÓN ACCIONES */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4">
           <h2 className="text-lg font-semibold text-amber-400 flex items-center gap-2">📋 1. Crear Concepto Base</h2>
