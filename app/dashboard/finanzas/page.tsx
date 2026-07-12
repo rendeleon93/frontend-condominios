@@ -32,6 +32,9 @@ interface ResumenFinanciero {
 export default function FinanzasDashboardPage() {
   const API_BASE_URL = "https://backend-condominios.onrender.com";
 
+  // 🚨 SOLUCIÓN PARA HYDRATION: Estado para verificar el montaje en el cliente
+  const [mounted, setMounted] = useState(false);
+
   // Catálogos globales
   const [condominios, setCondominios] = useState<Condominio[]>([]);
   const [condominioSeleccionadoId, setCondominioSeleccionadoId] = useState("");
@@ -58,6 +61,11 @@ export default function FinanzasDashboardPage() {
   const [busqueda, setBusqueda] = useState("");
   const [filtroEstatus, setFiltroEstatus] = useState("TODOS");
 
+  // Activar montaje seguro
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const obtenerEstiloEstatus = (estatus: UnidadFinanciera["estatus"]) => {
     const estilos = {
       PAGADO: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30",
@@ -70,6 +78,7 @@ export default function FinanzasDashboardPage() {
 
   // 1. Cargar condominios al inicializar
   useEffect(() => {
+    if (!mounted) return;
     const cargarCatalogoCondominios = async () => {
       setCargandoCondos(true);
       try {
@@ -91,7 +100,7 @@ export default function FinanzasDashboardPage() {
       }
     };
     cargarCatalogoCondominios();
-  }, []);
+  }, [mounted]);
 
   // 2. Extraer información financiera completa del condominio seleccionado
   const cargarDatosDelCondominio = async () => {
@@ -111,7 +120,6 @@ export default function FinanzasDashboardPage() {
       if (resUnidades.ok) {
         const payload = await resUnidades.json();
         
-        // Extraemos el arreglo limpiamente
         if (payload && payload.unidades) {
           setUnidades(Array.isArray(payload.unidades) ? payload.unidades : []);
         } else {
@@ -146,8 +154,10 @@ export default function FinanzasDashboardPage() {
   };
 
   useEffect(() => {
-    cargarDatosDelCondominio();
-  }, [condominioSeleccionadoId]);
+    if (mounted) {
+      cargarDatosDelCondominio();
+    }
+  }, [condominioSeleccionadoId, mounted]);
 
   // 3. Crear Concepto
   const handleCrearCuota = async (e: React.FormEvent) => {
@@ -223,13 +233,18 @@ export default function FinanzasDashboardPage() {
     }
   };
 
-  // Filtrado lógico local en Frontend con prevención de valores indefinidos
+  // Filtrado lógico local en Frontend
   const unidadesFiltradas = (unidades || []).filter((u) => {
     const nombreUnidad = u?.unidad ? String(u.unidad) : "";
     const coincideBusqueda = nombreUnidad.toLowerCase().includes(busqueda.toLowerCase());
     const coincideEstatus = filtroEstatus === "TODOS" || u?.estatus === filtroEstatus;
     return coincideBusqueda && coincideEstatus;
   });
+
+  // 🚨 SI NO HA SIDO MONTADO, RETORNA UN ESQUELETO O NADA PARA EVITAR DESFASES DE SSR
+  if (!mounted) {
+    return <div className="p-6 text-center text-slate-500 text-sm">Cargando Panel...</div>;
+  }
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8 bg-slate-950 text-white min-h-screen font-sans">
@@ -411,7 +426,6 @@ export default function FinanzasDashboardPage() {
                     <td className="p-4 font-mono text-xs text-blue-400">{u.id}</td>
                     <td className="p-4 font-semibold text-white">Depto {u?.unidad || "S/N"}</td>
                     <td className="p-4 font-medium text-slate-300">
-                      {/* 🚨 BLINDAJE AQUÍ: Si el monto viene nulo o indefinido, usamos 0 de respaldo */}
                       ${(u?.monto || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
                     </td>
                     <td className="p-4 text-center">
