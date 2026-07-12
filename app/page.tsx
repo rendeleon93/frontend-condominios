@@ -17,7 +17,8 @@ export default function LoginPage() {
 
     try {
       // 1. Usar la variable de entorno de Vercel (Render) o usar localhost de respaldo si estás en tu PC
-      const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+      // Cambia lo que tengas por la URL real de tu backend:
+export const API_URL = "https://backend-condominios.onrender.com";
 
       // 2. La petición ahora es dinámica usando la baseURL correcta
       const respuesta = await fetch(`${baseURL}/api/auth/login`, {
