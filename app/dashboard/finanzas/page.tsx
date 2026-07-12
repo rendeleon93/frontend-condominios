@@ -87,15 +87,19 @@ export default function FinanzasDashboardPage() {
       setCargandoCondos(true);
       try {
         const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+        console.log("🔍 Solicitando catálogo de condominios a la API...");
         const res = await fetch(`${API_BASE_URL}/api/admin/condominios`, {
           headers: { "Authorization": `Bearer ${token}` },
         });
         if (res.ok) {
           const data = await res.json();
+          console.log("🏢 Condominios recibidos desde el Backend:", data);
           if (Array.isArray(data) && data.length > 0) {
             setCondominios(data);
             setCondominioSeleccionadoId(data[0].id);
           }
+        } else {
+          console.error("❌ Falló respuesta de condominios:", res.status);
         }
       } catch (error) {
         console.error("Error cargando condominios:", error);
@@ -109,47 +113,59 @@ export default function FinanzasDashboardPage() {
   // 2. Extraer información financiera completa del condominio seleccionado
   const cargarDatosDelCondominio = async () => {
     if (!condominioSeleccionadoId) {
+      console.warn("⚠️ No hay condominio activo seleccionado.");
       setUnidades([]);
       setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
       return;
     }
     setCargandoUnidades(true);
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const urlDestino = `${API_BASE_URL}/api/admin/unidades/${condominioSeleccionadoId}`;
+
+    console.log(`📡 Consultando datos financieros para condominio ID: ${condominioSeleccionadoId}`);
+    console.log(`🔗 URL de consulta: ${urlDestino}`);
 
     try {
-      const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominioSeleccionadoId}`, {
+      const resUnidades = await fetch(urlDestino, {
         headers: { "Authorization": `Bearer ${token}` },
       });
       
       if (resUnidades.ok) {
         const payload = await resUnidades.json() as any;
+        console.log("📥 RESPUESTA ORIGINAL DEL SERVIDOR:", payload);
         
-        // BLINDAJE 1: Mapeo ultra seguro para las unidades
+        // Mapeo adaptativo e impresión en consola para validación
         if (payload && payload.unidades && Array.isArray(payload.unidades)) {
+          console.log("👉 Formato detectado: Objeto con propiedad .unidades", payload.unidades);
           setUnidades(payload.unidades);
         } else if (payload && Array.isArray(payload)) {
+          console.log("👉 Formato detectado: Arreglo puro directo", payload);
           setUnidades(payload);
         } else {
+          console.warn("👉 Formato desconocido o vacío para unidades.");
           setUnidades([]);
         }
 
-        // BLINDAJE 2: Mapeo ultra seguro para el resumen analítico
         if (payload && payload.resumen) {
+          console.log("📊 Resumen financiero integrado detectado:", payload.resumen);
           setResumen({
             totalRecaudado: Number(payload.resumen.totalRecaudado) || 0,
             porCobrar: Number(payload.resumen.porCobrar) || 0,
             morosidad: Number(payload.resumen.morosidad) || 0
           });
         } else if (payload && payload.totalRecaudado !== undefined) {
+          console.log("📊 Resumen financiero plano detectado en raíz");
           setResumen({
             totalRecaudado: Number(payload.totalRecaudado) || 0,
             porCobrar: Number(payload.porCobrar) || 0,
             morosidad: Number(payload.morosidad) || 0
           });
         } else {
+          console.warn("📊 No se encontró resumen financiero, inicializando en 0.");
           setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
         }
       } else {
+        console.error(`❌ HTTP Error al consultar unidades: Estatus ${resUnidades.status}`);
         setUnidades([]);
         setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
       }
@@ -160,6 +176,7 @@ export default function FinanzasDashboardPage() {
       });
       if (resCuotas.ok) {
         const dataCuotas = await resCuotas.json();
+        console.log("📋 Catálogo de cuotas para el selector:", dataCuotas);
         if (Array.isArray(dataCuotas)) {
           setCuotasDisponibles(dataCuotas);
           if (dataCuotas.length > 0) setCuotaSeleccionadaId(dataCuotas[0].id);
@@ -167,7 +184,7 @@ export default function FinanzasDashboardPage() {
         }
       }
     } catch (error) {
-      console.error("Error al cargar datos del condominio:", error);
+      console.error("💥 Error fatal de red en cargarDatosDelCondominio:", error);
       setUnidades([]);
       setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
     } finally {
@@ -258,7 +275,7 @@ export default function FinanzasDashboardPage() {
     }
   };
 
-  // Filtrado lógico local en Frontend con protecciones adicionales contra campos nulos
+  // Filtrado lógico
   const seguroUnidades = Array.isArray(unidades) ? unidades : [];
   const unidadesFiltradas = seguroUnidades.filter((u) => {
     if (!u) return false;
