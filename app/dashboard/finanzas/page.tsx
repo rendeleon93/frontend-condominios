@@ -6,8 +6,6 @@ interface Condominio { id: string; nombre: string; }
 interface CuotaCatalogo { id: string; nombre: string; monto: number; }
 interface UnidadFinanciera { id: string; unidad: string; estatus: "PENDIENTE" | "PAGADO" | "PARCIAL" | "VENCIDO"; monto: number; cargoId: string | null; }
 interface ResumenFinanciero { totalRecaudado: number; porCobrar: number; morosidad: number; }
-
-// Interfaz para mapear cada concepto individual de la deuda (Mejora solicitada)
 interface DesgloseCargo { cargoId: string; concepto: string; monto: number; estado: string; vencimiento: string; }
 
 export default function FinanzasDashboardPage() {
@@ -39,7 +37,6 @@ export default function FinanzasDashboardPage() {
   const [mesSeleccionado, setMesSeleccionado] = useState("7");
   const [anioSeleccionado, setAnioSeleccionado] = useState("2026");
 
-  // Modal e Historial línea por línea
   const [unidadSeleccionadaModal, setUnidadSeleccionadaModal] = useState<string | null>(null);
   const [cargoIdEspecifico, setCargoIdEspecifico] = useState<string | null>(null);
   const [itemsDesglose, setItemsDesglose] = useState<DesgloseCargo[]>([]);
@@ -112,7 +109,6 @@ export default function FinanzasDashboardPage() {
     }
   }, [condominioSeleccionadoId, mounted]);
 
-  // Invocar el desglose de lo que debe la unidad (Mejora solicitada)
   const abrirGestorCobroDetallado = async (unidadId: string) => {
     setUnidadSeleccionadaModal(unidadId);
     setCargoIdEspecifico(null);
@@ -154,7 +150,7 @@ export default function FinanzasDashboardPage() {
         body: JSON.stringify({ cuotaId: cuotaSeleccionadaId, anio: anioSeleccionado, mes: mesSeleccionado }),
       });
       if (res.ok) {
-        alert("⚡ Cargos masivos aplicados.");
+        alert("⚡ Lote masivo aplicado con éxito.");
         cargarDatosDelCondominio(condominioSeleccionadoId);
       }
     } catch (e) { console.error(e); } finally { setEjecutandoAccion(false); }
@@ -196,12 +192,16 @@ export default function FinanzasDashboardPage() {
     return coincideBusqueda && coincideEstatus;
   });
 
-  if (!mounted) return <div className="p-6 text-center text-slate-500">Cargando...</div>;
+  // Filtros internos para separar la modal visualmente
+  const deudasPendientes = itemsDesglose.filter(i => i.estado !== "PAGADO");
+  const deudasLiquidadas = itemsDesglose.filter(i => i.estado === "PAGADO");
+
+  if (!mounted) return <div className="p-6 text-center text-slate-500">Cargando Módulo...</div>;
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8 bg-slate-950 text-white min-h-screen font-sans">
       
-      {/* MODAL AVANZADA: DESGLOSE COMPLETO DE ADEUDOS LÍNEA POR LÍNEA */}
+      {/* MODAL AVANZADA: DESGLOSE COMPLETO DE ADEUDOS */}
       {unidadSeleccionadaModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto">
@@ -213,39 +213,70 @@ export default function FinanzasDashboardPage() {
             {cargandoDesglose ? (
               <p className="text-xs text-slate-500 text-center py-4">⏳ Extrayendo conceptos...</p>
             ) : itemsDesglose.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-4">✅ Esta unidad no cuenta con ningún adeudo activo.</p>
+              <p className="text-xs text-slate-400 text-center py-4">✅ Esta unidad no cuenta con ningún registro.</p>
             ) : (
-              <div className="space-y-3">
-                <p className="text-xs text-slate-400 uppercase font-semibold">Conceptos pendientes de liquidar:</p>
-                <div className="divide-y divide-slate-800 space-y-2">
-                  {itemsDesglose.map((item) => (
-                    <div key={item.cargoId} className="pt-2 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs">
-                      <div>
-                        <p className="font-semibold text-white">{item.concepto}</p>
-                        <p className="text-[10px] text-slate-500">Vence: {item.vencimiento}</p>
-                      </div>
-                      <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-                        <span className="font-bold text-amber-400 font-mono">{formatoMoneda(item.monto)}</span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${obtenerEstiloEstatus(item.estado)}`}>{item.estado}</span>
-                        {item.estado !== "PAGADO" && (
-                          <button onClick={() => setCargoIdEspecifico(item.cargoId)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-2 py-1 rounded text-[10px] transition">Cobrar</button>
-                        )}
-                      </div>
+              <div className="space-y-6">
+                
+                {/* 1. SECCIÓN DE CUOTAS PENDIENTES */}
+                <div className="space-y-3">
+                  <p className="text-xs text-amber-400 uppercase font-bold tracking-wider">⚠️ Conceptos Pendientes de Liquidar</p>
+                  {deudasPendientes.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic pl-2">Al corriente. No hay saldos pendientes.</p>
+                  ) : (
+                    <div className="divide-y divide-slate-800/60 space-y-2">
+                      {deudasPendientes.map((item) => (
+                        <div key={item.cargoId} className="pt-2 flex justify-between items-center gap-2 text-xs">
+                          <div>
+                            <p className="font-semibold text-white">{item.concepto}</p>
+                            <p className="text-[10px] text-slate-500">Vence: {item.vencimiento}</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-bold text-amber-400 font-mono">{formatoMoneda(item.monto)}</span>
+                            <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${obtenerEstiloEstatus(item.estado)}`}>{item.estado}</span>
+                            <button onClick={() => setCargoIdEspecifico(item.cargoId)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-3 py-1 rounded text-[10px] transition shadow-sm">Cobrar</button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
+
+                {/* 2. SECCIÓN DE HISTORIAL LIQUIDADO */}
+                <div className="space-y-3 pt-2 border-t border-slate-800">
+                  <p className="text-xs text-emerald-400 uppercase font-bold tracking-wider">✅ Historial de Pagos Liquidados</p>
+                  {deudasLiquidadas.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic pl-2">No se registran pagos previos en este periodo.</p>
+                  ) : (
+                    <div className="divide-y divide-slate-800/40 space-y-2">
+                      {deudasLiquidadas.map((item) => (
+                        <div key={item.cargoId} className="pt-2 flex justify-between items-center gap-2 text-xs opacity-70">
+                          <div>
+                            <p className="font-semibold text-slate-300">{item.concepto}</p>
+                            <p className="text-[10px] text-slate-500">Emitido: {item.vencimiento}</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-medium text-emerald-400 font-mono">{formatoMoneda(item.monto)}</span>
+                            <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${obtenerEstiloEstatus(item.estado)}`}>{item.estado}</span>
+                            <span className="text-[11px] text-emerald-500 font-semibold px-2">✓ Pagado</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
               </div>
             )}
 
-            {/* SECCIÓN DE ABONO/LIQUIDACIÓN DE UN CARGO ESPECÍFICO */}
+            {/* CAJA DE CONTROL PARA PROCESAR EL COBRO SELECCIONADO */}
             {cargoIdEspecifico && (
               <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-3 mt-4">
                 <p className="text-xs font-bold text-sky-400">⚡ Aplicar cobro al concepto seleccionado</p>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <input type="number" placeholder="Monto abono parcial" className="bg-slate-900 border border-slate-800 rounded p-2 text-white" value={montoAbono} onChange={(e) => setMontoAbono(e.target.value)} />
                   <div className="flex gap-1">
-                    <button onClick={() => procesarCobroEfectivo(true)} disabled={!montoAbono} className="w-1/2 bg-sky-500 hover:bg-sky-600 font-bold rounded text-slate-950">Abonar</button>
-                    <button onClick={() => procesarCobroEfectivo(false)} className="w-1/2 bg-emerald-500 hover:bg-emerald-600 font-bold rounded text-slate-950">Liquidar</button>
+                    <button onClick={() => procesarCobroEfectivo(true)} disabled={!montoAbono} className="w-1/2 bg-sky-500 hover:bg-sky-600 font-bold rounded text-slate-950 text-[11px]">Abonar</button>
+                    <button onClick={() => procesarCobroEfectivo(false)} className="w-1/2 bg-emerald-500 hover:bg-emerald-600 font-bold rounded text-slate-950 text-[11px]">Liquidar</button>
                   </div>
                 </div>
                 <button onClick={() => setCargoIdEspecifico(null)} className="text-[10px] text-slate-500 underline w-full text-center block">Cancelar abono</button>
@@ -326,7 +357,7 @@ export default function FinanzasDashboardPage() {
         </div>
       </div>
 
-      {/* TABLA PRINCIPAL DE CUENTAS */}
+      {/* TABLA PRINCIPAL */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-md">
         <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center bg-slate-900/50">
           <div className="flex items-center gap-4">
@@ -375,7 +406,7 @@ export default function FinanzasDashboardPage() {
                       <td className="p-4 text-center">
                         <button onClick={() => abrirGestorCobroDetallado(u.id)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-3 py-1 rounded-md text-xs transition">
                           Gestionar Cobro
-                    </button>
+                        </button>
                       </td>
                     </tr>
                   );
