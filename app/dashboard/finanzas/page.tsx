@@ -41,12 +41,18 @@ export default function FinanzasDashboardPage() {
   const [cargandoCondos, setCargandoCondos] = useState(true);
   const [cuotasDisponibles, setCuotasDisponibles] = useState<CuotaCatalogo[]>([]);
 
-  // 🚨 AJUSTE DE SEGURIDAD MÁXIMA: Estado inicial fuertemente tipado para evitar cualquier valor nulo
+  // Estado inicial fuertemente tipado para el resumen de KPIs
   const [resumen, setResumen] = useState<ResumenFinanciero>({
     totalRecaudado: 0,
     porCobrar: 0,
     morosidad: 0
   });
+
+  // Estados de la tabla y filtros
+  const [unidades, setUnidades] = useState<UnidadFinanciera[]>([]);
+  const [cargandoUnidades, setCargandoUnidades] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
+  const [filtroEstatus, setFiltroEstatus] = useState("TODOS");
 
   // Estados de formularios (Paso 1)
   const [nombreCuota, setNombreCuota] = useState("");
@@ -59,13 +65,7 @@ export default function FinanzasDashboardPage() {
   const [mesSeleccionado, setMesSeleccionado] = useState("7");
   const [anioSeleccionado, setAnioSeleccionado] = useState("2026");
 
-  // Estados de la tabla y filtros
-  const [unidades, setUnidades] = useState<UnidadFinanciera[]>([]);
-  const [cargandoUnidades, setCargandoUnidades] = useState(false);
-  const [busqueda, setBusqueda] = useState("");
-  const [filtroEstatus, setFiltroEstatus] = useState("TODOS");
-
-  // Activar montaje seguro
+  // Activar montaje seguro en el cliente
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -122,7 +122,8 @@ export default function FinanzasDashboardPage() {
       });
       
       if (resUnidades.ok) {
-        const payload = await resUnidades.json();
+        // 🚨 SOLUCIÓN AQUÍ: Forzamos la respuesta como 'any' temporalmente para que TypeScript no rompa el Build de Vercel
+        const payload = await resUnidades.json() as any;
         
         if (payload && payload.unidades) {
           setUnidades(Array.isArray(payload.unidades) ? payload.unidades : []);
@@ -130,7 +131,6 @@ export default function FinanzasDashboardPage() {
           setUnidades(Array.isArray(payload) ? payload : []);
         }
 
-        // Aseguramos que si el backend manda datos incompletos o nulos, se asigne el fallback estructurado
         if (payload && payload.resumen) {
           setResumen({
             totalRecaudado: Number(payload.resumen.totalRecaudado) || 0,
@@ -155,7 +155,7 @@ export default function FinanzasDashboardPage() {
       }
     } catch (error) {
       console.error("Error al cargar datos del condominio:", error);
-      setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 }); // Fallback en caso de error de red
+      setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
     } finally {
       setCargandoUnidades(false);
     }
@@ -224,7 +224,7 @@ export default function FinanzasDashboardPage() {
     }
   };
 
-  // 5. Acción rápida: Registrar pago directo de una unidad
+  // 5. Registrar pago directo
   const handleRegistrarPago = async (cargoId: string) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/admin/cargos/${cargoId}/pagar`, {
@@ -249,12 +249,10 @@ export default function FinanzasDashboardPage() {
     return coincideBusqueda && coincideEstatus;
   });
 
-  // Si no ha sido montado, retorna un cargando para evitar desfasamientos de SSR
   if (!mounted) {
     return <div className="p-6 text-center text-slate-500 text-sm">Cargando Panel...</div>;
   }
 
-  // Creamos una constante local blindada para renderizar de forma 100% segura los números
   const seguroResumen = resumen || { totalRecaudado: 0, porCobrar: 0, morosidad: 0 };
 
   return (
@@ -284,7 +282,7 @@ export default function FinanzasDashboardPage() {
         </div>
       </header>
 
-      {/* TARJETAS KPI MULTI-PROTEGIDAS */}
+      {/* TARJETAS KPI */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Total Recaudado</p>
@@ -389,7 +387,7 @@ export default function FinanzasDashboardPage() {
         </div>
       </div>
 
-      {/* TABLA Y FILTROS INTERACTIVOS */}
+      {/* TABLA Y FILTROS */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-md">
         <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center bg-slate-900/50">
           <h2 className="text-xl font-semibold text-slate-200">Estatus Financiero por Departamento</h2>
