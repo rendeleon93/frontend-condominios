@@ -20,19 +20,26 @@ interface UnidadFinanciera {
   unidad: string;
   estatus: "PENDIENTE" | "PAGADO" | "PARCIAL" | "VENCIDO";
   monto: number;
+  cargoId: string | null;
+}
+
+interface ResumenFinanciero {
+  totalRecaudado: number;
+  porCobrar: number;
+  morosidad: number;
 }
 
 export default function FinanzasDashboardPage() {
-  // Constante de producción para tu servidor en Render
   const API_BASE_URL = "https://backend-condominios.onrender.com";
 
-  // Estados para el catálogo de condominios dinámico
+  // Catálogos globales
   const [condominios, setCondominios] = useState<Condominio[]>([]);
   const [condominioSeleccionadoId, setCondominioSeleccionadoId] = useState("");
   const [cargandoCondos, setCargandoCondos] = useState(true);
-
-  // Catálogo secundario: Cuotas disponibles para el condominio activo
   const [cuotasDisponibles, setCuotasDisponibles] = useState<CuotaCatalogo[]>([]);
+
+  // Estados financieros dinámicos (KPIs reales)
+  const [resumen, setResumen] = useState<ResumenFinanciero>({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
 
   // Estados de formularios (Paso 1)
   const [nombreCuota, setNombreCuota] = useState("");
@@ -45,11 +52,12 @@ export default function FinanzasDashboardPage() {
   const [mesSeleccionado, setMesSeleccionado] = useState("7");
   const [anioSeleccionado, setAnioSeleccionado] = useState("2026");
 
-  // Estado de la tabla de unidades
+  // Estados de la tabla y filtros
   const [unidades, setUnidades] = useState<UnidadFinanciera[]>([]);
   const [cargandoUnidades, setCargandoUnidades] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
+  const [filtroEstatus, setFiltroEstatus] = useState("TODOS");
 
-  // Mapeador visual para los estatus financieros
   const obtenerEstiloEstatus = (estatus: UnidadFinanciera["estatus"]) => {
     const estilos = {
       PAGADO: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30",
@@ -60,7 +68,7 @@ export default function FinanzasDashboardPage() {
     return estilos[estatus] || "bg-slate-800 text-slate-400";
   };
 
-  // 1. Cargar el catálogo global de condominios al inicializar
+  // 1. Cargar condominios al inicializar
   useEffect(() => {
     const cargarCatalogoCondominios = async () => {
       setCargandoCondos(true);
@@ -72,21 +80,18 @@ export default function FinanzasDashboardPage() {
         if (res.ok) {
           const data = await res.json();
           setCondominios(data);
-          if (data.length > 0) {
-            setCondominioSeleccionadoId(data[0].id);
-          }
+          if (data.length > 0) setCondominioSeleccionadoId(data[0].id);
         }
       } catch (error) {
-        console.error("Error al obtener catálogo de condominios:", error);
+        console.error(error);
       } finally {
         setCargandoCondos(false);
       }
     };
-
     cargarCatalogoCondominios();
   }, []);
 
-  // 2. Extraer cuotas base y unidades financieras cada vez que cambie el condominio seleccionado
+  // 2. Extraer información financiera completa del condominio seleccionado
   const cargarDatosDelCondominio = async () => {
     if (!condominioSeleccionadoId) {
       setUnidades([]);
@@ -97,32 +102,26 @@ export default function FinanzasDashboardPage() {
     const token = localStorage.getItem("token");
 
     try {
-      // Petición A: Cargar estatus financiero por departamento
       const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominioSeleccionadoId}`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
       if (resUnidades.ok) {
-        const data = await resUnidades.json();
-        setUnidades(data);
-      } else {
-        setUnidades([]);
+        const payload = await resUnidades.json();
+        setUnidades(payload.unidades);
+        setResumen(payload.resumen);
       }
 
-      // Petición B: Cargar conceptos de cuota guardados en el catálogo para este condominio
       const resCuotas = await fetch(`${API_BASE_URL}/api/admin/cuotas?condominioId=${condominioSeleccionadoId}`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
       if (resCuotas.ok) {
         const dataCuotas = await resCuotas.json();
         setCuotasDisponibles(dataCuotas);
-        if (dataCuotas.length > 0) {
-          setCuotaSeleccionadaId(dataCuotas[0].id); // Autoselecciona la primera cuota en el paso 2
-        } else {
-          setCuotaSeleccionadaId("");
-        }
+        if (dataCuotas.length > 0) setCuotaSeleccionadaId(dataCuotas[0].id);
+        else setCuotaSeleccionadaId("");
       }
     } catch (error) {
-      console.error("Error al cargar la información financiera:", error);
+      console.error(error);
     } finally {
       setCargandoUnidades(false);
     }
@@ -132,10 +131,10 @@ export default function FinanzasDashboardPage() {
     cargarDatosDelCondominio();
   }, [condominioSeleccionadoId]);
 
-  // 3. Guardar concepto en el catálogo enlazado al condominio activo
+  // 3. Crear Concepto
   const handleCrearCuota = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!condominioSeleccionadoId) return alert("Por favor selecciona o registra un condominio primero.");
+    if (!condominioSeleccionadoId) return alert("Selecciona un condominio primero.");
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/admin/cuotas`, {
@@ -154,23 +153,19 @@ export default function FinanzasDashboardPage() {
       });
 
       if (res.ok) {
-        alert("🎉 Concepto de cuota guardado e integrado con éxito al catálogo.");
+        alert("🎉 Concepto integrado al catálogo.");
         setNombreCuota("");
         setMonto("");
-        // Refrescar datos para actualizar el selector de facturación masiva
         cargarDatosDelCondominio();
-      } else {
-        alert("Error al guardar la cuota en el servidor.");
       }
     } catch (error) {
       console.error(error);
     }
   };
 
-  // 4. Lanzar cobro masivo del periodo seleccionado
+  // 4. Disparar cargos masivos
   const handleGenerarCargosMasivos = async () => {
-    if (!cuotaSeleccionadaId) return alert("Por favor selecciona una cuota base del catálogo (Paso 1).");
-    
+    if (!cuotaSeleccionadaId) return alert("Selecciona una cuota del catálogo.");
     try {
       const res = await fetch(`${API_BASE_URL}/api/admin/generar-cargos-mes`, {
         method: "POST",
@@ -184,215 +179,194 @@ export default function FinanzasDashboardPage() {
           mes: mesSeleccionado,
         }),
       });
-
-      const data = await res.json();
       if (res.ok) {
-        alert(`⚡ ${data.mensaje}`);
-        cargarDatosDelCondominio(); // Actualiza la tabla automáticamente
-      } else {
-        alert(`Error: ${data.error}`);
+        alert("⚡ Cargos masivos generados con éxito.");
+        cargarDatosDelCondominio();
       }
     } catch (error) {
       console.error(error);
     }
   };
 
+  // 5. Acción rápida: Registrar pago directo de una unidad
+  const handleRegistrarPago = async (cargoId: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/cargos/${cargoId}/pagar`, {
+        method: "PATCH",
+        headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+      });
+      if (res.ok) {
+        cargarDatosDelCondominio(); // Refresca KPIs y estatus al instante
+      } else {
+        alert("No se pudo registrar el pago.");
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  // Filtrado lógico local en Frontend
+  const unidadesFiltradas = unidades.filter((u) => {
+    const coincideBusqueda = u.unidad.toLowerCase().includes(busqueda.toLowerCase());
+    const coincideEstatus = filtroEstatus === "TODOS" || u.estatus === filtroEstatus;
+    return coincideBusqueda && coincideEstatus;
+  });
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8 bg-slate-950 text-white min-h-screen font-sans">
-      {/* HEADER PRINCIPAL */}
+      {/* HEADER */}
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-100">Panel Financiero de Administración</h1>
           <p className="text-slate-400 text-sm">Gestiona flujos, asigna mantenimiento mensual y audita departamentos.</p>
         </div>
 
-        {/* SELECTOR GLOBAL DE ENTORNO */}
-        <div className="w-full sm:w-72 bg-slate-900 p-3 rounded-xl border border-slate-800/80 space-y-1">
+        <div className="w-full sm:w-72 bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">🏢 Condominio Activo</label>
-          {cargandoCondos ? (
-            <div className="text-xs text-slate-500 animate-pulse py-1">Cargando complejos...</div>
-          ) : (
-            <select
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-blue-500 cursor-pointer"
-              value={condominioSeleccionadoId}
-              onChange={(e) => setCondominioSeleccionadoId(e.target.value)}
-            >
-              {condominios.length === 0 ? (
-                <option value="">No hay propiedades de alta</option>
-              ) : (
-                condominios.map((c) => (
-                  <option key={c.id} value={c.id}>{c.nombre}</option>
-                ))
-              )}
-            </select>
-          )}
+          <select
+            className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none cursor-pointer"
+            value={condominioSeleccionadoId}
+            onChange={(e) => setCondominioSeleccionadoId(e.target.value)}
+          >
+            {condominios.map((c) => (
+              <option key={c.id} value={c.id}>{c.nombre}</option>
+            ))}
+          </select>
         </div>
       </header>
 
-      <hr className="border-slate-800/60" />
+      {/* TARJETAS KPI DE MÉTRICAS REALES */}
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
+          <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Total Recaudado</p>
+          <p className="text-2xl font-bold text-emerald-400">${resumen.totalRecaudado.toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN</p>
+        </div>
+        <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
+          <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Por Cobrar</p>
+          <p className="text-2xl font-bold text-amber-400">${resumen.porCobrar.toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN</p>
+        </div>
+        <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
+          <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Morosidad</p>
+          <p className="text-2xl font-bold text-rose-400">{resumen.morosidad}%</p>
+        </div>
+      </section>
 
-      {/* SECCIÓN DE OPERACIONES (FORMULARIOS) */}
+      {/* FORMULARIOS OPERATIVOS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        
-        {/* PASO 1: CATALOGO DE CUOTAS */}
+        {/* Catálogo */}
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4">
-          <h2 className="text-lg font-semibold text-amber-400 flex items-center gap-2">
-            <span>📋</span> 1. Crear Concepto de Cuota Base
-          </h2>
+          <h2 className="text-lg font-semibold text-amber-400 flex items-center gap-2">📋 1. Crear Concepto Base</h2>
           <form onSubmit={handleCrearCuota} className="space-y-4 text-sm">
-            <div>
-              <label className="block text-slate-400 mb-1">Nombre Comercial</label>
+            <input
+              type="text"
+              placeholder="Ej. Mantenimiento Regular Torres"
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500"
+              value={nombreCuota}
+              onChange={(e) => setNombreCuota(e.target.value)}
+              required
+            />
+            <div className="grid grid-cols-2 gap-4">
               <input
-                type="text"
-                placeholder="Ej. Mantenimiento Regular Torres"
+                type="number"
+                placeholder="Monto Fijo ($)"
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500"
-                value={nombreCuota}
-                onChange={(e) => setNombreCuota(e.target.value)}
+                value={monto}
+                onChange={(e) => setMonto(e.target.value)}
+                required
+              />
+              <input
+                type="number"
+                min="1"
+                max="28"
+                placeholder="Día límite mensual"
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500"
+                value={diaVencimiento}
+                onChange={(e) => setDiaVencimiento(e.target.value)}
                 required
               />
             </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-slate-400 mb-1">Monto Fijo ($)</label>
-                <input
-                  type="number"
-                  placeholder="1800"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500"
-                  value={monto}
-                  onChange={(e) => setMonto(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-slate-400 mb-1">Día límite mensual</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="28"
-                  placeholder="10"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500"
-                  value={diaVencimiento}
-                  onChange={(e) => setDiaVencimiento(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">Clasificación Contable</label>
-              <select
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none"
-                value={tipoCuota}
-                onChange={(e) => setTipoCuota(e.target.value)}
-              >
-                <option value="MANTENIMIENTO_ORDINARIO">Mantenimiento Ordinario</option>
-                <option value="EXTRAORDINARIO">Cuota Extraordinaria</option>
-                <option value="FONDO_RESERVA">Fondo de Reserva</option>
-                <option value="MULTA">Multa / Penalización</option>
-              </select>
-            </div>
-
+            <select
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none"
+              value={tipoCuota}
+              onChange={(e) => setTipoCuota(e.target.value)}
+            >
+              <option value="MANTENIMIENTO_ORDINARIO">Mantenimiento Ordinario</option>
+              <option value="EXTRAORDINARIO">Cuota Extraordinaria</option>
+            </select>
             <button type="submit" className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2.5 rounded-lg transition">
               Registrar en Catálogo
             </button>
           </form>
         </div>
 
-        {/* PASO 2: FACTURACIÓN MASIVA CON SELECTOR AUTOMÁTICO */}
+        {/* Facturación Masiva */}
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4 flex flex-col justify-between">
           <div className="space-y-4 text-sm">
-            <h2 className="text-lg font-semibold text-emerald-400 flex items-center gap-2">
-              <span>🚀</span> 2. Disparar Facturación del Mes
-            </h2>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              El sistema asociará un nuevo cargo con estatus "PENDIENTE" a cada uno de los departamentos registrados en el condominio seleccionado.
-            </p>
-
-            <div>
-              <label className="block text-slate-400 mb-1">Seleccionar Cuota del Catálogo</label>
-              {cuotasDisponibles.length === 0 ? (
-                <div className="text-xs bg-slate-950 border border-dashed border-slate-800 rounded-lg p-3 text-amber-400 text-center">
-                  ⚠️ No hay cuotas de alta para este condominio. Registra una en el Paso 1.
-                </div>
-              ) : (
-                <select
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-emerald-400 font-mono focus:outline-none focus:border-emerald-500"
-                  value={cuotaSeleccionadaId}
-                  onChange={(e) => setCuotaSeleccionadaId(e.target.value)}
-                >
-                  {cuotasDisponibles.map((cuota) => (
-                    <option key={cuota.id} value={cuota.id}>
-                      {cuota.nombre} — ${cuota.monto} MXN
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-
+            <h2 className="text-lg font-semibold text-emerald-400 flex items-center gap-2">🚀 2. Disparar Facturación</h2>
+            {cuotasDisponibles.length === 0 ? (
+              <div className="text-xs bg-slate-950 border border-dashed border-slate-800 rounded-lg p-4 text-amber-400 text-center">
+                ⚠️ Registra una cuota en el Paso 1 para habilitar la facturación.
+              </div>
+            ) : (
+              <select
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-emerald-400 font-mono focus:outline-none"
+                value={cuotaSeleccionadaId}
+                onChange={(e) => setCuotaSeleccionadaId(e.target.value)}
+              >
+                {cuotasDisponibles.map((cuota) => (
+                  <option key={cuota.id} value={cuota.id}>{cuota.nombre} — ${cuota.monto} MXN</option>
+                ))}
+              </select>
+            )}
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-slate-400 mb-1">Mes de Cobertura</label>
-                <select
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none"
-                  value={mesSeleccionado}
-                  onChange={(e) => setMesSeleccionado(e.target.value)}
-                >
-                  <option value="1">Enero</option>
-                  <option value="2">Febrero</option>
-                  <option value="3">Marzo</option>
-                  <option value="4">Abril</option>
-                  <option value="5">Mayo</option>
-                  <option value="6">Junio</option>
-                  <option value="7">Julio</option>
-                  <option value="8">Agosto</option>
-                  <option value="9">Septiembre</option>
-                  <option value="10">Octubre</option>
-                  <option value="11">Noviembre</option>
-                  <option value="12">Diciembre</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-slate-400 mb-1">Año Fiscal</label>
-                <select
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none"
-                  value={anioSeleccionado}
-                  onChange={(e) => setAnioSeleccionado(e.target.value)}
-                >
-                  <option value="2026">2026</option>
-                  <option value="2027">2027</option>
-                </select>
-              </div>
+              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={mesSeleccionado} onChange={(e) => setMesSeleccionado(e.target.value)}>
+                <option value="7">Julio</option>
+                <option value="8">Agosto</option>
+                <option value="9">Septiembre</option>
+              </select>
+              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={anioSeleccionado} onChange={(e) => setAnioSeleccionado(e.target.value)}>
+                <option value="2026">2026</option>
+                <option value="2027">2027</option>
+              </select>
             </div>
           </div>
-
-          <button
-            onClick={handleGenerarCargosMasivos}
-            disabled={cuotasDisponibles.length === 0}
-            className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2.5 rounded-lg transition mt-4 disabled:opacity-40"
-          >
+          <button onClick={handleGenerarCargosMasivos} disabled={cuotasDisponibles.length === 0} className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2.5 rounded-lg transition mt-4 disabled:opacity-40">
             Generar Cuentas por Cobrar
           </button>
         </div>
       </div>
 
-      {/* DETALLE FINANCIERO DINÁMICO */}
+      {/* CONTROLES DE FILTROS AVANZADOS Y TABLA */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-md">
-        <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+        <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center bg-slate-900/50">
           <h2 className="text-xl font-semibold text-slate-200">Estatus Financiero por Departamento</h2>
-          <span className="text-xs bg-slate-950 border border-slate-800 px-3 py-1 rounded-full text-slate-400 font-medium">
-            {unidades.length} Unidades Totales
-          </span>
+          
+          {/* BUSCADOR Y FILTRO DE SELECTOR */}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              placeholder="Buscar unidad (Ej. 101)..."
+              className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 w-full sm:w-48 text-white"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+            />
+            <select
+              className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none text-slate-300 cursor-pointer"
+              value={filtroEstatus}
+              onChange={(e) => setFiltroEstatus(e.target.value)}
+            >
+              <option value="TODOS">Todos los Estatus</option>
+              <option value="PENDIENTE">Pendientes</option>
+              <option value="PAGADO">Pagados</option>
+              <option value="VENCIDO">Vencidos</option>
+            </select>
+          </div>
         </div>
 
         {cargandoUnidades ? (
-          <div className="p-12 text-center text-slate-500 text-sm animate-pulse">
-            ⏳ Extrayendo registros financieros en tiempo real desde Render...
-          </div>
-        ) : unidades.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 text-sm">
-            📭 No hay departamentos vinculados a este condominio o no se han generado cargos activos.
-          </div>
+          <div className="p-12 text-center text-slate-500 text-sm animate-pulse">⏳ Extrayendo registros financieros en tiempo real...</div>
+        ) : unidadesFiltradas.length === 0 ? (
+          <div className="p-12 text-center text-slate-500 text-sm">📭 No se encontraron registros coincidentes.</div>
         ) : (
           <div className="overflow-x-auto text-xs sm:text-sm">
             <table className="w-full text-left text-slate-300">
@@ -400,12 +374,13 @@ export default function FinanzasDashboardPage() {
                 <tr>
                   <th className="p-4">ID Sistema</th>
                   <th className="p-4">Departamento / Unidad</th>
-                  <th className="p-4">Monto Último Cargo</th>
+                  <th className="p-4">Último Cargo</th>
                   <th className="p-4 text-center">Estatus del Periodo</th>
+                  <th className="p-4 text-center">Acciones de Cobro</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {unidades.map((u) => (
+                {unidadesFiltradas.map((u) => (
                   <tr key={u.id} className="hover:bg-slate-800/30 transition-colors">
                     <td className="p-4 font-mono text-xs text-blue-400">{u.id}</td>
                     <td className="p-4 font-semibold text-white">Depto {u.unidad}</td>
@@ -416,6 +391,20 @@ export default function FinanzasDashboardPage() {
                       <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${obtenerEstiloEstatus(u.estatus)}`}>
                         {u.estatus}
                       </span>
+                    </td>
+                    <td className="p-4 text-center">
+                      {u.cargoId && u.estatus !== "PAGADO" ? (
+                        <button
+                          onClick={() => handleRegistrarPago(u.cargoId!)}
+                          className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-3 py-1 rounded-md text-xs transition shadow-sm"
+                        >
+                          Liquidar Deuda
+                        </button>
+                      ) : u.estatus === "PAGADO" ? (
+                        <span className="text-emerald-400 text-xs font-medium">✅ Al corriente</span>
+                      ) : (
+                        <span className="text-slate-500 text-xs">Sin cargos activos</span>
+                      )}
                     </td>
                   </tr>
                 ))}
