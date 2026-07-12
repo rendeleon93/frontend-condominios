@@ -129,9 +129,10 @@ export default function FinanzasDashboardPage() {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
     try {
-      const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominioSeleccionadoId}`, {
-        headers: { "Authorization": `Bearer ${token}` },
-      });
+    // 🚨 BUSCA ESTA LÍNEA EXACTA EN TU page.tsx DEL FRONTEND Y CAMBIA LA URL ASÍ:
+const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominioSeleccionadoId}/analiticas`, {
+  headers: { "Authorization": `Bearer ${token}` },
+});
       
       if (resUnidades.status === 403 || resUnidades.status === 401) {
         setErrorSesion("Sesión inválida al consultar datos financieros.");
