@@ -4,8 +4,11 @@ import { useState, useEffect } from "react";
 
 interface Condominio { id: string; nombre: string; }
 interface CuotaCatalogo { id: string; nombre: string; monto: number; }
-interface UnidadFinanciera { id: string; unidad: string; estatus: "PENDIENTE" | "PAGADO" | "PARCIAL" | "VENCIDO"; monto: number; cargoId: string | null; fechaPago?: string | null; }
+interface UnidadFinanciera { id: string; unidad: string; estatus: "PENDIENTE" | "PAGADO" | "PARCIAL" | "VENCIDO"; monto: number; cargoId: string | null; }
 interface ResumenFinanciero { totalRecaudado: number; porCobrar: number; morosidad: number; }
+
+// Interfaz para mapear cada concepto individual de la deuda (Mejora solicitada)
+interface DesgloseCargo { cargoId: string; concepto: string; monto: number; estado: string; vencimiento: string; }
 
 export default function FinanzasDashboardPage() {
   const API_BASE_URL = "https://backend-condominios.onrender.com";
@@ -22,6 +25,7 @@ export default function FinanzasDashboardPage() {
   
   const [cargandoUnidades, setCargandoUnidades] = useState(false);
   const [ejecutandoAccion, setEjecutandoAccion] = useState(false);
+  const [cargandoDesglose, setCargandoDesglose] = useState(false);
 
   const [busqueda, setBusqueda] = useState("");
   const [filtroEstatus, setFiltroEstatus] = useState("TODOS");
@@ -35,7 +39,10 @@ export default function FinanzasDashboardPage() {
   const [mesSeleccionado, setMesSeleccionado] = useState("7");
   const [anioSeleccionado, setAnioSeleccionado] = useState("2026");
 
-  const [cargoSeleccionadoModal, setCargoSeleccionadoModal] = useState<string | null>(null);
+  // Modal e Historial línea por línea
+  const [unidadSeleccionadaModal, setUnidadSeleccionadaModal] = useState<string | null>(null);
+  const [cargoIdEspecifico, setCargoIdEspecifico] = useState<string | null>(null);
+  const [itemsDesglose, setItemsDesglose] = useState<DesgloseCargo[]>([]);
   const [montoAbono, setMontoAbono] = useState("");
 
   useEffect(() => { setMounted(true); }, []);
@@ -44,8 +51,8 @@ export default function FinanzasDashboardPage() {
     return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(val);
   };
 
-  const obtenerEstiloEstatus = (estatus: UnidadFinanciera["estatus"]) => {
-    const estilos = {
+  const obtenerEstiloEstatus = (estatus: string) => {
+    const estilos: Record<string, string> = {
       PAGADO: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30",
       PENDIENTE: "bg-amber-500/10 text-amber-400 border border-amber-500/30",
       VENCIDO: "bg-rose-500/10 text-rose-400 border border-rose-500/30",
@@ -105,6 +112,23 @@ export default function FinanzasDashboardPage() {
     }
   }, [condominioSeleccionadoId, mounted]);
 
+  // Invocar el desglose de lo que debe la unidad (Mejora solicitada)
+  const abrirGestorCobroDetallado = async (unidadId: string) => {
+    setUnidadSeleccionadaModal(unidadId);
+    setCargoIdEspecifico(null);
+    setItemsDesglose([]);
+    setCargandoDesglose(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/unidades/${unidadId}/cargos-detallados`, {
+        headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setItemsDesglose(data || []);
+      }
+    } catch (e) { console.error(e); } finally { setCargandoDesglose(false); }
+  };
+
   const handleCrearCuota = async (e: React.FormEvent) => {
     e.preventDefault();
     setEjecutandoAccion(true);
@@ -130,24 +154,25 @@ export default function FinanzasDashboardPage() {
         body: JSON.stringify({ cuotaId: cuotaSeleccionadaId, anio: anioSeleccionado, mes: mesSeleccionado }),
       });
       if (res.ok) {
-        alert("⚡ Lote masivo aplicado con éxito.");
+        alert("⚡ Cargos masivos aplicados.");
         cargarDatosDelCondominio(condominioSeleccionadoId);
       }
     } catch (e) { console.error(e); } finally { setEjecutandoAccion(false); }
   };
 
   const procesarCobroEfectivo = async (esParcial: boolean) => {
-    if (!cargoSeleccionadoModal) return;
+    if (!cargoIdEspecifico) return;
     setEjecutandoAccion(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/cargos/${cargoSeleccionadoModal}/pagar`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/cargos/${cargoIdEspecifico}/pagar`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("token")}` },
         body: JSON.stringify({ montoAbono: esParcial ? Number(montoAbono) : null })
       });
       if (res.ok) {
-        setCargoSeleccionadoModal(null);
         setMontoAbono("");
+        setCargoIdEspecifico(null);
+        if (unidadSeleccionadaModal) abrirGestorCobroDetallado(unidadSeleccionadaModal);
         cargarDatosDelCondominio(condominioSeleccionadoId);
       }
     } catch (e) { console.error(e); } finally { setEjecutandoAccion(false); }
@@ -159,11 +184,8 @@ export default function FinanzasDashboardPage() {
     const blob = new Blob([encabezados.join(",") + filas.join("")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", `Reporte_Finanzas.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    link.href = url; link.setAttribute("download", `Reporte_Finanzas.csv`);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
   const seguroUnidades = Array.isArray(unidades) ? unidades : [];
@@ -174,25 +196,61 @@ export default function FinanzasDashboardPage() {
     return coincideBusqueda && coincideEstatus;
   });
 
-  if (!mounted) return <div className="p-6 text-center text-slate-500">Cargando Módulo...</div>;
+  if (!mounted) return <div className="p-6 text-center text-slate-500">Cargando...</div>;
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8 bg-slate-950 text-white min-h-screen font-sans">
       
-      {/* MODAL DE GESTIÓN DE COBROS */}
-      {cargoSeleccionadoModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-sm w-full space-y-4">
-            <h3 className="text-lg font-bold text-slate-100">⚖️ Registrar Recepción Pago</h3>
-            <div className="space-y-2">
-              <label className="block text-xs font-semibold text-slate-400 uppercase">Abono Parcial ($)</label>
-              <input type="number" placeholder="Ej. 500" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white text-sm focus:outline-none" value={montoAbono} onChange={(e) => setMontoAbono(e.target.value)} />
+      {/* MODAL AVANZADA: DESGLOSE COMPLETO DE ADEUDOS LÍNEA POR LÍNEA */}
+      {unidadSeleccionadaModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-bold text-slate-100">📋 Desglosado Analítico de Adeudos</h3>
+              <button onClick={() => setUnidadSeleccionadaModal(null)} className="text-slate-400 hover:text-white font-bold text-sm">✕ Cerrar</button>
             </div>
-            <div className="grid grid-cols-2 gap-2 pt-2">
-              <button onClick={() => procesarCobroEfectivo(true)} disabled={!montoAbono || ejecutandoAccion} className="bg-sky-500 hover:bg-sky-600 disabled:opacity-40 text-slate-950 font-bold py-2 rounded-lg text-xs transition">Abonar Parcial</button>
-              <button onClick={() => procesarCobroEfectivo(false)} disabled={ejecutandoAccion} className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2 rounded-lg text-xs transition">Liquidar Total</button>
-            </div>
-            <button onClick={() => setCargoSeleccionadoModal(null)} className="w-full text-center text-xs text-slate-500 hover:text-slate-300">Cancelar</button>
+            
+            {cargandoDesglose ? (
+              <p className="text-xs text-slate-500 text-center py-4">⏳ Extrayendo conceptos...</p>
+            ) : itemsDesglose.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-4">✅ Esta unidad no cuenta con ningún adeudo activo.</p>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-400 uppercase font-semibold">Conceptos pendientes de liquidar:</p>
+                <div className="divide-y divide-slate-800 space-y-2">
+                  {itemsDesglose.map((item) => (
+                    <div key={item.cargoId} className="pt-2 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs">
+                      <div>
+                        <p className="font-semibold text-white">{item.concepto}</p>
+                        <p className="text-[10px] text-slate-500">Vence: {item.vencimiento}</p>
+                      </div>
+                      <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                        <span className="font-bold text-amber-400 font-mono">{formatoMoneda(item.monto)}</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${obtenerEstiloEstatus(item.estado)}`}>{item.estado}</span>
+                        {item.estado !== "PAGADO" && (
+                          <button onClick={() => setCargoIdEspecifico(item.cargoId)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-2 py-1 rounded text-[10px] transition">Cobrar</button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* SECCIÓN DE ABONO/LIQUIDACIÓN DE UN CARGO ESPECÍFICO */}
+            {cargoIdEspecifico && (
+              <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-3 mt-4">
+                <p className="text-xs font-bold text-sky-400">⚡ Aplicar cobro al concepto seleccionado</p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <input type="number" placeholder="Monto abono parcial" className="bg-slate-900 border border-slate-800 rounded p-2 text-white" value={montoAbono} onChange={(e) => setMontoAbono(e.target.value)} />
+                  <div className="flex gap-1">
+                    <button onClick={() => procesarCobroEfectivo(true)} disabled={!montoAbono} className="w-1/2 bg-sky-500 hover:bg-sky-600 font-bold rounded text-slate-950">Abonar</button>
+                    <button onClick={() => procesarCobroEfectivo(false)} className="w-1/2 bg-emerald-500 hover:bg-emerald-600 font-bold rounded text-slate-950">Liquidar</button>
+                  </div>
+                </div>
+                <button onClick={() => setCargoIdEspecifico(null)} className="text-[10px] text-slate-500 underline w-full text-center block">Cancelar abono</button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -237,7 +295,7 @@ export default function FinanzasDashboardPage() {
               <input type="number" placeholder="Monto ($)" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={monto} onChange={(e) => setMonto(e.target.value)} required />
               <input type="number" min="1" max="28" placeholder="Día Vence" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={diaVencimiento} onChange={(e) => setDiaVencimiento(e.target.value)} required />
             </div>
-            <button type="submit" disabled={ejecutandoAccion} className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-slate-950 font-bold py-2 rounded-lg text-xs transition">
+            <button type="submit" disabled={ejecutandoAccion} className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2 rounded-lg text-xs transition">
               {ejecutandoAccion ? "Procesando..." : "Agregar al Catálogo"}
             </button>
           </form>
@@ -262,13 +320,13 @@ export default function FinanzasDashboardPage() {
               </select>
             </div>
           </div>
-          <button onClick={handleGenerarCargosMasivos} disabled={cuotasDisponibles.length === 0 || ejecutandoAccion} className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-slate-950 font-bold py-2 rounded-lg text-xs transition mt-2">
+          <button onClick={handleGenerarCargosMasivos} disabled={cuotasDisponibles.length === 0 || ejecutandoAccion} className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-2 rounded-lg text-xs transition mt-2">
             {ejecutandoAccion ? "Generando..." : "Aplicar Cuentas Masivas"}
           </button>
         </div>
       </div>
 
-      {/* TABLA */}
+      {/* TABLA PRINCIPAL DE CUENTAS */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-md">
         <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center bg-slate-900/50">
           <div className="flex items-center gap-4">
@@ -299,7 +357,7 @@ export default function FinanzasDashboardPage() {
                   <th className="p-4">ID Sistema</th>
                   <th className="p-4">Unidad</th>
                   <th className="p-4">Saldo Pendiente</th>
-                  <th className="p-4 text-center">Estatus</th>
+                  <th className="p-4 text-center">Estatus Global</th>
                   <th className="p-4 text-center">Acciones</th>
                 </tr>
               </thead>
@@ -315,11 +373,9 @@ export default function FinanzasDashboardPage() {
                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${obtenerEstiloEstatus(u.estatus)}`}>{u.estatus}</span>
                       </td>
                       <td className="p-4 text-center">
-                        {u.cargoId && u.estatus !== "PAGADO" ? (
-                          <button onClick={() => setCargoSeleccionadoModal(u.cargoId)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-3 py-1 rounded-md text-xs transition">Gestionar Cobro</button>
-                        ) : (
-                          <span className="text-emerald-400 text-xs font-medium">✅ Al corriente</span>
-                        )}
+                        <button onClick={() => abrirGestorCobroDetallado(u.id)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-3 py-1 rounded-md text-xs transition">
+                          Gestionar Cobro
+                    </button>
                       </td>
                     </tr>
                   );
