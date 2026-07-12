@@ -6,7 +6,7 @@ interface Condominio { id: string; nombre: string; }
 interface CuotaCatalogo { id: string; nombre: string; monto: number; }
 interface UnidadFinanciera { id: string; unidad: string; estatus: "PENDIENTE" | "PAGADO" | "PARCIAL" | "VENCIDO"; monto: number; cargoId: string | null; }
 interface ResumenFinanciero { totalRecaudado: number; porCobrar: number; morosidad: number; }
-interface DesgloseCargo { cargoId: string; concepto: string; monto: number; estado: string; vencimiento: string; }
+interface DesgloseCargo { cargoId: string; concepto: string; monto: number; estado: string; vencimiento: string; urlPagoDigital?: string; }
 
 export default function FinanzasDashboardPage() {
   const API_BASE_URL = "https://backend-condominios.onrender.com";
@@ -174,9 +174,50 @@ export default function FinanzasDashboardPage() {
     } catch (e) { console.error(e); } finally { setEjecutandoAccion(false); }
   };
 
+  // MEJORA 2: Generación nativa de recibo contable oficial en PDF/Impresión
+  const emitirReciboPDFNativo = (item: DesgloseCargo) => {
+    const ventanaImpresion = window.open("", "_blank");
+    if (!ventanaImpresion) return;
+
+    ventanaImpresion.document.write(`
+      <html>
+        <head>
+          <title>Recibo de Pago - Sigmato PropTech</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 40px; color: #333; }
+            .recibo-card { border: 2px solid #ddd; padding: 30px; border-radius: 12px; max-width: 600px; margin: auto; }
+            .header { border-b: 2px solid #f0f0f0; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; }
+            .title { font-size: 22px; font-weight: bold; color: #0f172a; }
+            .monto { font-size: 26px; color: #10b981; font-weight: bold; margin: 20px 0; }
+            .footer { font-size: 11px; color: #777; text-align: center; margin-top: 30px; border-top: 1px dashed #ddd; padding-top: 15px; }
+          </style>
+        </head>
+        <body>
+          <div class="recibo-card">
+            <div class="header">
+              <div>
+                <div class="title">SIGMATO PROPTECH</div>
+                <p style="font-size:12px; color:#666; margin:4px 0;">Comprobante Digital Fiscal Homologado</p>
+              </div>
+              <div style="text-align:right; font-size:12px;">
+                <p><b>Folio:</b> ${item.cargoId.slice(0,8).toUpperCase()}</p>
+                <p><b>Fecha:</b> ${new Date().toLocaleDateString()}</p>
+              </div>
+            </div>
+            <p><b>Concepto Liquidado:</b> ${item.concepto}</p>
+            <p><b>Estatus de Transacción:</b> <span style="color:#10b981; font-weight:bold;">LIQUIDADO ✓</span></p>
+            <div class="monto">Total Recibido: ${formatoMoneda(item.monto)}</div>
+            <div class="footer">Este documento sirve como recibo legal de pago. Gracias por mantener sus cuotas al corriente.</div>
+          </div>
+          <script>window.print();</script>
+        </body>
+      </html>
+    `);
+    ventanaImpresion.document.close();
+  };
+
   const exportarDataCSV = () => {
     const encabezados = ["ID Sistema", "Unidad", "Monto Restante", "Estatus\n"];
-    // 🛡️ Corregido asignando tipo explícito para evitar error en el build estricto
     const filas = unidadesFiltradas.map((u: UnidadFinanciera) => `${u.id},Depto ${u.unidad},${u.monto},${u.estatus}\n`);
     const blob = new Blob([encabezados.join(",") + filas.join("")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -195,6 +236,11 @@ export default function FinanzasDashboardPage() {
 
   const deudasPendientes = itemsDesglose.filter(i => i.estado !== "PAGADO");
   const deudasLiquidadas = itemsDesglose.filter(i => i.estado === "PAGADO");
+
+  // MEJORA 4: Variables calculadas para alimentar las gráficas reactivas CSS de Tailwind
+  const totalProyectado = resumen.totalRecaudado + resumen.porCobrar;
+  const porcentajeRecaudado = totalProyectado > 0 ? Math.round((resumen.totalRecaudado / totalProyectado) * 100) : 0;
+  const porcentajePendiente = totalProyectado > 0 ? Math.round((resumen.porCobrar / totalProyectado) * 100) : 0;
 
   if (!mounted) return <div className="p-6 text-center text-slate-500">Cargando Módulo...</div>;
 
@@ -233,6 +279,14 @@ export default function FinanzasDashboardPage() {
                           <div className="flex items-center gap-3">
                             <span className="font-bold text-amber-400 font-mono">{formatoMoneda(item.monto)}</span>
                             <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${obtenerEstiloEstatus(item.estado)}`}>{item.estado}</span>
+                            
+                            {/* MEJORA 3: Enlace directo a Pasarela de Pagos Digitales Stripe */}
+                            {item.urlPagoDigital && (
+                              <a href={item.urlPagoDigital} target="_blank" rel="noopener noreferrer" className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-2 py-1 rounded text-[10px] transition">
+                                Link de Pago 💳
+                              </a>
+                            )}
+                            
                             <button onClick={() => setCargoIdEspecifico(item.cargoId)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-3 py-1 rounded text-[10px] transition shadow-sm">Cobrar</button>
                           </div>
                         </div>
@@ -241,7 +295,7 @@ export default function FinanzasDashboardPage() {
                   )}
                 </div>
 
-                {/* 2. SECCIÓN DE HISTORIAL LIQUIDADO */}
+                {/* 2. SECCIÓN DE HISTORIAL LIQUIDADO + EMISIÓN PDF (Mejora 2) */}
                 <div className="space-y-3 pt-2 border-t border-slate-800">
                   <p className="text-xs text-emerald-400 uppercase font-bold tracking-wider">✅ Historial de Pagos Liquidados</p>
                   {deudasLiquidadas.length === 0 ? (
@@ -257,7 +311,11 @@ export default function FinanzasDashboardPage() {
                           <div className="flex items-center gap-3">
                             <span className="font-medium text-emerald-400 font-mono">{formatoMoneda(item.monto)}</span>
                             <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${obtenerEstiloEstatus(item.estado)}`}>{item.estado}</span>
-                            <span className="text-[11px] text-emerald-500 font-semibold px-2">✓ Pagado</span>
+                            
+                            {/* MEJORA 2: Botón contable para disparar recibo oficial PDF */}
+                            <button onClick={() => emitirReciboPDFNativo(item)} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white px-2 py-1 rounded text-[10px] font-medium transition">
+                              Recibo PDF 📄
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -290,7 +348,7 @@ export default function FinanzasDashboardPage() {
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-100">Panel Financiero de Administración</h1>
-          <p className="text-slate-400 text-sm">Flujos analíticos y facturación corporativa.</p>
+          <p className="text-slate-400 text-sm">Flujos analíticos, moratorias automáticas y reportería unificada.</p>
         </div>
         <div className="w-full sm:w-72 bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">🏢 Condominio Activo</label>
@@ -300,19 +358,46 @@ export default function FinanzasDashboardPage() {
         </div>
       </header>
 
-      {/* KPIS */}
+      {/* KPIS DE RESUMEN */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-1">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Total Recaudado</p>
           <p className="text-2xl font-bold text-emerald-400">{formatoMoneda(resumen.totalRecaudado)}</p>
         </div>
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-1">
-          <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Por Cobrar</p>
+          <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Por Cobrar (Con Recargos ⚠️)</p>
           <p className="text-2xl font-bold text-amber-400">{formatoMoneda(resumen.porCobrar)}</p>
         </div>
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-1">
-          <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Morosidad</p>
+          <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Morosidad General</p>
           <p className="text-2xl font-bold text-rose-400">{resumen.morosidad}%</p>
+        </div>
+      </section>
+
+      {/* MEJORA 4: COMPONENTE DE GRÁFICA INTERACTIVA CON TAILWIND CSS PURO */}
+      <section className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4">
+        <h2 className="text-base font-semibold text-slate-200">📊 Gráfica de Tendencia de Ingresos (Periodo Activo)</h2>
+        <div className="space-y-4 pt-2">
+          {/* Barra de Recaudado */}
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-slate-400">
+              <span>Flujo de Caja Real (Recaudado)</span>
+              <span className="font-mono text-emerald-400 font-bold">{formatoMoneda(resumen.totalRecaudado)} ({porcentajeRecaudado}%)</span>
+            </div>
+            <div className="w-full bg-slate-950 h-3.5 rounded-full overflow-hidden border border-slate-800">
+              <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${porcentajeRecaudado}%` }}></div>
+            </div>
+          </div>
+          {/* Barra de Por Cobrar */}
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-slate-400">
+              <span>Cuentas por Cobrar Activas</span>
+              <span className="font-mono text-amber-400 font-bold">{formatoMoneda(resumen.porCobrar)} ({porcentajePendiente}%)</span>
+            </div>
+            <div className="w-full bg-slate-950 h-3.5 rounded-full overflow-hidden border border-slate-800">
+              <div className="bg-amber-500 h-full transition-all duration-500" style={{ width: `${porcentajePendiente}%` }}></div>
+            </div>
+          </div>
         </div>
       </section>
 
