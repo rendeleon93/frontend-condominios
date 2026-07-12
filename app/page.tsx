@@ -15,13 +15,12 @@ export default function LoginPage() {
     setError('');
     setCargando(true);
 
-    try {
-      // 1. Usar la variable de entorno de Vercel (Render) o usar localhost de respaldo si estás en tu PC
-      // Cambia lo que tengas por la URL real de tu backend:
-export const API_URL = "https://backend-condominios.onrender.com";
+    // Definimos correctamente la URL de tu backend en Render
+    const API_BASE_URL = "https://backend-condominios.onrender.com";
 
-      // 2. La petición ahora es dinámica usando la baseURL correcta
-      const respuesta = await fetch(`${baseURL}/api/auth/login`, {
+    try {
+      // Realizamos la petición usando la constante correcta
+      const respuesta = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
