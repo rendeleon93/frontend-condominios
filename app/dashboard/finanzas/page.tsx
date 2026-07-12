@@ -184,7 +184,7 @@ export default function FinanzasDashboardPage() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  const seguroUnidades = Array.isArray(unidades) ? unidades : [];
+  const seguroUnidades = Array.isArray(unidades) ? units : [];
   const unidadesFiltradas = seguroUnidades.filter((u) => {
     if (!u) return false;
     const coincideBusqueda = String(u.unidad).toLowerCase().includes(busqueda.toLowerCase());
@@ -192,7 +192,6 @@ export default function FinanzasDashboardPage() {
     return coincideBusqueda && coincideEstatus;
   });
 
-  // Filtros internos para separar la modal visualmente
   const deudasPendientes = itemsDesglose.filter(i => i.estado !== "PAGADO");
   const deudasLiquidadas = itemsDesglose.filter(i => i.estado === "PAGADO");
 
@@ -268,7 +267,7 @@ export default function FinanzasDashboardPage() {
               </div>
             )}
 
-            {/* CAJA DE CONTROL PARA PROCESAR EL COBRO SELECCIONADO */}
+            {/* CAJA DE CONTROL PARA PROCESAR EL COBRO */}
             {cargoIdEspecifico && (
               <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-3 mt-4">
                 <p className="text-xs font-bold text-sky-400">⚡ Aplicar cobro al concepto seleccionado</p>
