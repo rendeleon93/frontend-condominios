@@ -37,13 +37,16 @@ export default function DashboardPrincipalPage() {
   const [numeroUnidad, setNumeroUnidad] = useState("");
   const [pisoUnidad, setPisoUnidad] = useState("1");
 
+  // URL del Backend en Render definida en una constante limpia
+  const API_BASE_URL = "https://backend-condominios.onrender.com";
+
   // 1. Catálogo inicial de condominios
   useEffect(() => {
     const cargarCondominios = async () => {
       setCargandoCondos(true);
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch("http://localhost:3000/api/admin/condominios", {
+        const res = await fetch(`${API_BASE_URL}/api/admin/condominios`, {
           headers: { "Authorization": `Bearer ${token}` },
         });
 
@@ -58,7 +61,7 @@ export default function DashboardPrincipalPage() {
         setCargandoCondos(false);
       }
     };
-    cargarCondominios(); // ✨ Corregido aquí de forma definitiva
+    cargarCondominios();
   }, []);
 
   // 2. Censo de unidades conectadas
@@ -67,7 +70,7 @@ export default function DashboardPrincipalPage() {
     setCargandoUnidades(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`http://localhost:3000/api/admin/unidades/${condominioSeleccionadoId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominioSeleccionadoId}`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
       if (res.ok) {
@@ -91,7 +94,7 @@ export default function DashboardPrincipalPage() {
     if (!condominioSeleccionadoId) return;
 
     try {
-      const res = await fetch("http://localhost:3000/api/admin/unidades", {
+      const res = await fetch(`${API_BASE_URL}/api/admin/unidades`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
