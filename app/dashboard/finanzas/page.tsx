@@ -98,8 +98,10 @@ export default function FinanzasDashboardPage() {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
             setCondominios(data);
-            // Fijamos de inmediato el ID del primer condominio válido encontrado
-            setCondominioSeleccionadoId(String(data[0].id));
+            // Aseguramos que guarde un ID válido desde el primer instante
+            if (data[0] && data[0].id) {
+              setCondominioSeleccionadoId(String(data[0].id));
+            }
           }
         }
       } catch (error) {
@@ -111,10 +113,10 @@ export default function FinanzasDashboardPage() {
     cargarCatalogoCondominios();
   }, [mounted]);
 
-  // 2. Cargar datos financieros con escudo protector contra "undefined"
+  // 2. Cargar datos financieros con escudo blindado contra strings vacíos o nulos
   const cargarDatosDelCondominio = async (idCondo: string) => {
-    // 🛡️ ESCUDO CRÍTICO: Si no hay ID real, cancelamos la petición inmediatamente
-    if (!idCondo || idCondo === "undefined" || idCondo.trim() === "") {
+    // 🛡️ ESCUDO ANTI-VACÍOS DEFINITIVO: Detiene peticiones malformadas como unidades//analiticas
+    if (!idCondo || idCondo === "undefined" || idCondo.trim() === "" || idCondo === "null") {
       return;
     }
     
@@ -135,14 +137,12 @@ export default function FinanzasDashboardPage() {
         const payload = await resUnidades.json();
         
         if (payload) {
-          // Asignar unidades de forma segura
           if (payload.unidades && Array.isArray(payload.unidades)) {
             setUnidades(payload.unidades);
           } else if (Array.isArray(payload)) {
             setUnidades(payload);
           }
 
-          // Asignar resumen de KPIs de forma segura
           if (payload.resumen) {
             setResumen({
               totalRecaudado: Number(payload.resumen.totalRecaudado) || 0,
@@ -166,14 +166,14 @@ export default function FinanzasDashboardPage() {
       }
     } catch (error) {
       console.error("Error cargando condominio:", error);
-    } military {
+    } finally {
       setCargandoUnidades(false);
     }
   };
 
-  // Escucha los cambios del selector de condominios
+  // Solo se ejecuta si el ID actual es completamente válido y no está vacío
   useEffect(() => {
-    if (mounted && condominioSeleccionadoId && condominioSeleccionadoId !== "undefined") {
+    if (mounted && condominioSeleccionadoId && condominioSeleccionadoId.trim() !== "" && condominioSeleccionadoId !== "undefined") {
       cargarDatosDelCondominio(condominioSeleccionadoId);
     }
   }, [condominioSeleccionadoId, mounted]);
