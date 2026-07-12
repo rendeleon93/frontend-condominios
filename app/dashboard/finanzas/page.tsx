@@ -43,14 +43,14 @@ export default function FinanzasDashboardPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Efecto para cargar datos cuando cambie el condominio seleccionado
+  // Forzar la carga apenas cambie el ID del Condominio
   useEffect(() => {
     if (mounted && condominioSeleccionadoId && condominioSeleccionadoId !== "null" && condominioSeleccionadoId !== "undefined") {
       cargarDatosDelCondominio(condominioSeleccionadoId);
     }
   }, [mounted, condominioSeleccionadoId]);
 
-  // Conciliación de retorno automático de Stripe
+  // Escuchar retorno de Stripe Checkout
   useEffect(() => {
     if (mounted) {
       const queryParams = new URLSearchParams(window.location.search);
@@ -62,19 +62,14 @@ export default function FinanzasDashboardPage() {
           try {
             const res = await fetch(`${API_BASE_URL}/api/admin/cargos/${cargoId}/pagar`, {
               method: "PATCH",
-              headers: { 
-                "Content-Type": "application/json", 
-                "Authorization": `Bearer ${localStorage.getItem("token")}` 
-              }
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("token")}` }
             });
             if (res.ok) {
               alert("🎉 ¡Pago recibido y conciliado automáticamente por Stripe Checkout!");
               window.history.replaceState({}, document.title, window.location.pathname);
-              if (condominioSeleccionadoId) {
-                cargarDatosDelCondominio(condominioSeleccionadoId);
-              }
+              if (condominioSeleccionadoId) cargarDatosDelCondominio(condominioSeleccionadoId);
             }
-          } catch (e) { console.error("Error al conciliar con Stripe:", e); }
+          } catch (e) { console.error(e); }
         };
         conciliarPagoStripe();
       }
@@ -103,6 +98,7 @@ export default function FinanzasDashboardPage() {
         const data = await res.json();
         if (data && data.length > 0) {
           setCondominios(data);
+          // 🛡️ Seteo inmediato del primer condominio para que nunca aparezca vacío
           setCondominioSeleccionadoId(String(data[0].id));
         }
       }
@@ -257,13 +253,10 @@ export default function FinanzasDashboardPage() {
   };
 
   const seguroUnidades = Array.isArray(unidades) ? unidades : [];
-  
-  // 🛡️ Filtro optimizado: Permite buscar tanto el número limpio (ej. "101") como texto combinado (ej. "Depto 101")
   const unidadesFiltradas = seguroUnidades.filter((u) => {
     if (!u) return false;
-    const textoCompleto = `depto ${String(u.unidad).toLowerCase()}`;
-    const coincideBusqueda = String(u.unidad).toLowerCase().includes(busqueda.toLowerCase()) || 
-                             textoCompleto.includes(busqueda.toLowerCase());
+    const textoDepto = `depto ${String(u.unidad).toLowerCase()}`;
+    const coincideBusqueda = String(u.unidad).toLowerCase().includes(busqueda.toLowerCase()) || textoDepto.includes(busqueda.toLowerCase());
     const coincideEstatus = filtroEstatus === "TODOS" || u.estatus === filtroEstatus;
     return coincideBusqueda && coincideEstatus;
   });
@@ -302,6 +295,7 @@ export default function FinanzasDashboardPage() {
                   ) : (
                     <div className="divide-y divide-slate-800/60 space-y-2">
                       {deudasPendientes.map((item) => {
+                        // URL real de Stripe o fallback seguro si el backend no cuenta con llaves configuradas
                         const linkFinalStripe = item.urlPagoDigital || `https://checkout.stripe.com/pay/sigmato_checkout_${item.cargoId}`;
 
                         return (
@@ -384,7 +378,6 @@ export default function FinanzasDashboardPage() {
         <div className="w-full sm:w-72 bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">🏢 Condominio Activo</label>
           <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-white focus:outline-none cursor-pointer" value={condominioSeleccionadoId} onChange={(e) => setCondominioSeleccionadoId(e.target.value)}>
-            {condominios.length === 0 && <option value="">Cargando condominios...</option>}
             {condominios.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
         </div>
@@ -494,7 +487,7 @@ export default function FinanzasDashboardPage() {
         {cargandoUnidades ? (
           <div className="p-12 text-center text-slate-500 text-sm animate-pulse">⏳ Sincronizando balance...</div>
         ) : unidadesFiltradas.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 text-sm">📭 No hay registros financieros.</div>
+          <div className="p-12 text-center text-slate-500 text-sm">📭 No hay registros financieros para mostrar.</div>
         ) : (
           <div className="overflow-x-auto text-xs sm:text-sm">
             <table className="w-full text-left text-slate-300">
