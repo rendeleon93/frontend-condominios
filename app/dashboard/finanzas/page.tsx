@@ -38,7 +38,7 @@ export default function FinanzasDashboardPage() {
   const [cargandoCondos, setCargandoCondos] = useState(true);
   const [cuotasDisponibles, setCuotasDisponibles] = useState<CuotaCatalogo[]>([]);
 
-  // Estados financieros protegidos contra fallos de renderizado
+  // Estados financieros protegidos
   const [resumen, setResumen] = useState<ResumenFinanciero>({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
 
   // Estados de formularios (Paso 1)
@@ -97,7 +97,7 @@ export default function FinanzasDashboardPage() {
   const cargarDatosDelCondominio = async () => {
     if (!condominioSeleccionadoId) {
       setUnidades([]);
-      setCuotasDisponibles([]);
+      setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
       return;
     }
     setCargandoUnidades(true);
@@ -107,15 +107,24 @@ export default function FinanzasDashboardPage() {
       const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominioSeleccionadoId}`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
+      
       if (resUnidades.ok) {
         const payload = await resUnidades.json();
-        // Salvaguardas ante payloads inesperados o vacíos
-        setUnidades(payload?.unidades || []);
-        setResumen({
-          totalRecaudado: payload?.resumen?.totalRecaudado || 0,
-          porCobrar: payload?.resumen?.porCobrar || 0,
-          morosidad: payload?.resumen?.morosidad || 0
-        });
+        
+        // 🚨 SOLUCIÓN AL ERROR TYPEERROR: Extraemos correctamente el arreglo del objeto estructurado
+        if (payload && payload.unidades) {
+          setUnidades(Array.isArray(payload.unidades) ? payload.unidades : []);
+        } else {
+          setUnidades(Array.isArray(payload) ? payload : []);
+        }
+
+        if (payload && payload.resumen) {
+          setResumen({
+            totalRecaudado: payload.resumen.totalRecaudado || 0,
+            porCobrar: payload.resumen.porCobrar || 0,
+            morosidad: payload.resumen.morosidad || 0
+          });
+        }
       }
 
       const resCuotas = await fetch(`${API_BASE_URL}/api/admin/cuotas?condominioId=${condominioSeleccionadoId}`, {
@@ -214,7 +223,7 @@ export default function FinanzasDashboardPage() {
     }
   };
 
-  // Filtrado lógico local en Frontend con prevención de nulos
+  // Filtrado lógico local en Frontend
   const unidadesFiltradas = (unidades || []).filter((u) => {
     const nombreUnidad = u?.unidad ? String(u.unidad) : "";
     const coincideBusqueda = nombreUnidad.toLowerCase().includes(busqueda.toLowerCase());
@@ -249,7 +258,7 @@ export default function FinanzasDashboardPage() {
         </div>
       </header>
 
-      {/* TARJETAS KPI PROTEGIDAS */}
+      {/* TARJETAS KPI */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Total Recaudado</p>
@@ -354,7 +363,7 @@ export default function FinanzasDashboardPage() {
         </div>
       </div>
 
-      {/* CONTROLES DE FILTROS AVANZADOS Y TABLA */}
+      {/* TABLA Y FILTROS INTERACTIVOS */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-md">
         <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center bg-slate-900/50">
           <h2 className="text-xl font-semibold text-slate-200">Estatus Financiero por Departamento</h2>
