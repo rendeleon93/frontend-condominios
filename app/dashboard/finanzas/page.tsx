@@ -176,7 +176,8 @@ export default function FinanzasDashboardPage() {
 
   const exportarDataCSV = () => {
     const encabezados = ["ID Sistema", "Unidad", "Monto Restante", "Estatus\n"];
-    const filas = unidadesFiltradas.map(u => `${u.id},Depto ${u.unidad},${u.monto},${u.estatus}\n`);
+    // 🛡️ Corregido asignando tipo explícito para evitar error en el build estricto
+    const filas = unidadesFiltradas.map((u: UnidadFinanciera) => `${u.id},Depto ${u.unidad},${u.monto},${u.estatus}\n`);
     const blob = new Blob([encabezados.join(",") + filas.join("")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -184,7 +185,7 @@ export default function FinanzasDashboardPage() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  const seguroUnidades = Array.isArray(unidades) ? units : [];
+  const seguroUnidades = Array.isArray(unidades) ? unidades : [];
   const unidadesFiltradas = seguroUnidades.filter((u) => {
     if (!u) return false;
     const coincideBusqueda = String(u.unidad).toLowerCase().includes(busqueda.toLowerCase());
