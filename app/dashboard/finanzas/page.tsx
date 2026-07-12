@@ -32,41 +32,34 @@ interface ResumenFinanciero {
 export default function FinanzasDashboardPage() {
   const API_BASE_URL = "https://backend-condominios.onrender.com";
 
-  // Estado para verificar el montaje seguro en el cliente y evitar Hydration Errors
   const [mounted, setMounted] = useState(false);
   const [errorSesion, setErrorSesion] = useState<string | null>(null);
 
-  // Catálogos globales
   const [condominios, setCondominios] = useState<Condominio[]>([]);
   const [condominioSeleccionadoId, setCondominioSeleccionadoId] = useState("");
   const [cargandoCondos, setCargandoCondos] = useState(true);
   const [cuotasDisponibles, setCuotasDisponibles] = useState<CuotaCatalogo[]>([]);
 
-  // Estado inicial fuertemente protegido para el resumen de KPIs
   const [resumen, setResumen] = useState<ResumenFinanciero>({
     totalRecaudado: 0,
     porCobrar: 0,
     morosidad: 0
   });
 
-  // Estados de la tabla y filtros
   const [unidades, setUnidades] = useState<UnidadFinanciera[]>([]);
   const [cargandoUnidades, setCargandoUnidades] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const [filtroEstatus, setFiltroEstatus] = useState("TODOS");
 
-  // Estados de formularios (Paso 1: Crear Concepto)
   const [nombreCuota, setNombreCuota] = useState("");
   const [monto, setMonto] = useState("");
   const [diaVencimiento, setDiaVencimiento] = useState("10");
   const [tipoCuota, setTipoCuota] = useState("MANTENIMIENTO_ORDINARIO");
 
-  // Estados de cargos masivos (Paso 2: Disparar Facturación)
   const [cuotaSeleccionadaId, setCuotaSeleccionadaId] = useState("");
   const [mesSeleccionado, setMesSeleccionado] = useState("7");
   const [anioSeleccionado, setAnioSeleccionado] = useState("2026");
 
-  // Activar montaje seguro en el cliente
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -81,7 +74,6 @@ export default function FinanzasDashboardPage() {
     return estilos[estatus] || "bg-slate-800 text-slate-400";
   };
 
-  // 1. Cargar catálogo de condominios al inicializar
   useEffect(() => {
     if (!mounted) return;
     const cargarCatalogoCondominios = async () => {
@@ -89,22 +81,18 @@ export default function FinanzasDashboardPage() {
       setErrorSesion(null);
       try {
         const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-        
         if (!token) {
           setErrorSesion("Token de sesión inexistente. Por favor, inicia sesión.");
           setCargandoCondos(false);
           return;
         }
-
         const res = await fetch(`${API_BASE_URL}/api/admin/condominios`, {
           headers: { "Authorization": `Bearer ${token}` },
         });
-
         if (res.status === 403 || res.status === 401) {
           setErrorSesion("Tu sesión ha expirado o no tienes permisos (Error 403).");
           return;
         }
-
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
@@ -113,7 +101,7 @@ export default function FinanzasDashboardPage() {
           }
         }
       } catch (error) {
-        console.error("Error cargando condominios:", error);
+        console.error(error);
       } finally {
         setCargandoCondos(false);
       }
@@ -121,7 +109,6 @@ export default function FinanzasDashboardPage() {
     cargarCatalogoCondominios();
   }, [mounted]);
 
-  // 2. Extraer información financiera completa del condominio seleccionado
   const cargarDatosDelCondominio = async () => {
     if (!condominioSeleccionadoId) {
       setUnidades([]);
@@ -132,7 +119,6 @@ export default function FinanzasDashboardPage() {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
     try {
-      // 🔗 Conectado de forma precisa a la nueva ruta /analiticas de tu backend
       const resUnidades = await fetch(`${API_BASE_URL}/api/admin/unidades/${condominioSeleccionadoId}/analiticas`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
@@ -145,7 +131,6 @@ export default function FinanzasDashboardPage() {
       if (resUnidades.ok) {
         const payload = await resUnidades.json() as any;
         
-        // Mapeo ultra seguro de unidades
         if (payload && payload.unidades && Array.isArray(payload.unidades)) {
           setUnidades(payload.unidades);
         } else if (payload && Array.isArray(payload)) {
@@ -154,7 +139,6 @@ export default function FinanzasDashboardPage() {
           setUnidades([]);
         }
 
-        // Mapeo seguro del resumen analítico para los KPIs
         if (payload && payload.resumen) {
           setResumen({
             totalRecaudado: Number(payload.resumen.totalRecaudado) || 0,
@@ -166,7 +150,6 @@ export default function FinanzasDashboardPage() {
         }
       }
 
-      // Cargar catálogo de cuotas para el selector masivo
       const resCuotas = await fetch(`${API_BASE_URL}/api/admin/cuotas?condominioId=${condominioSeleccionadoId}`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
@@ -179,7 +162,7 @@ export default function FinanzasDashboardPage() {
         }
       }
     } catch (error) {
-      console.error("Error financiero:", error);
+      console.error(error);
       setUnidades([]);
       setResumen({ totalRecaudado: 0, porCobrar: 0, morosidad: 0 });
     } finally {
@@ -193,7 +176,6 @@ export default function FinanzasDashboardPage() {
     }
   }, [condominioSeleccionadoId, mounted]);
 
-  // 3. Crear Concepto Base
   const handleCrearCuota = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!condominioSeleccionadoId) return alert("Selecciona un condominio primero.");
@@ -226,7 +208,6 @@ export default function FinanzasDashboardPage() {
     }
   };
 
-  // 4. Disparar Facturación Masiva del Mes
   const handleGenerarCargosMasivos = async () => {
     if (!cuotaSeleccionadaId) return alert("Selecciona una cuota del catálogo.");
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -252,7 +233,6 @@ export default function FinanzasDashboardPage() {
     }
   };
 
-  // 5. Acción Rápida: Liquidar Deuda
   const handleRegistrarPago = async (cargoId: string) => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     try {
@@ -262,15 +242,28 @@ export default function FinanzasDashboardPage() {
       });
       if (res.ok) {
         cargarDatosDelCondominio();
-      } else {
-        alert("No se pudo registrar el pago.");
       }
     } catch (error) {
       console.error(error);
     }
   };
 
-  // Filtrado lógico dinámico local
+  if (!mounted) {
+    return <div className="p-6 text-center text-slate-500 text-sm">Cargando Panel...</div>;
+  }
+
+  if (errorSesion) {
+    return (
+      <div className="p-12 max-w-md mx-auto my-20 bg-slate-900 border border-slate-800 rounded-xl text-center space-y-4">
+        <p className="text-amber-400 text-xl font-bold">⚠️ Control de Acceso</p>
+        <p className="text-slate-300 text-sm">{errorSesion}</p>
+        <button onClick={() => window.location.href = "/"} className="bg-amber-500 text-slate-950 font-bold px-4 py-2 rounded-lg text-sm hover:bg-amber-600 transition">
+          Regresar al Login
+        </button>
+      </div>
+    );
+  }
+
   const seguroUnidades = Array.isArray(unidades) ? unidades : [];
   const unidadesFiltradas = seguroUnidades.filter((u) => {
     if (!u) return false;
@@ -280,28 +273,9 @@ export default function FinanzasDashboardPage() {
     return coincideBusqueda && coincideEstatus;
   });
 
-  // Impedir saltos visuales hasta que el cliente cargue por completo
-  if (!mounted) {
-    return <div className="p-6 text-center text-slate-500 text-sm">Cargando Panel...</div>;
-  }
-
-  // Interruptor de seguridad si la sesión expiró
-  if (errorSesion) {
-    return (
-      <div className="p-12 max-w-md mx-auto my-20 bg-slate-900 border border-slate-800 rounded-xl text-center space-y-4">
-        <p className="text-amber-400 text-xl font-bold">⚠️ Control de Acceso</p>
-        <p className="text-slate-300 text-sm">{errorSesion}</p>
-        <button 
-          onClick={() => window.location.href = "/"} 
-          className="bg-amber-500 text-slate-950 font-bold px-4 py-2 rounded-lg text-sm hover:bg-amber-600 transition"
-        >
-          Regresar al Login
-        </button>
-      </div>
-    );
-  }
-
-  const seguroResumen = resumen || { totalRecaudado: 0, porCobrar: 0, morosidad: 0 };
+  const totalRecaudadoSeguro = resumen && resumen.totalRecaudado ? Number(resumen.totalRecaudado) : 0;
+  const porCobrarSeguro = resumen && resumen.porCobrar ? Number(resumen.porCobrar) : 0;
+  const morosidadSegura = resumen && resumen.morosidad ? Number(resumen.morosidad) : 0;
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8 bg-slate-950 text-white min-h-screen font-sans">
@@ -330,29 +304,24 @@ export default function FinanzasDashboardPage() {
         </div>
       </header>
 
-      {/* TARJETAS KPI EN TIEMPO REAL */}
+      {/* TARJETAS KPI — INFASEABLES Y ULTRA-BLINDADAS */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Total Recaudado</p>
-          <p className="text-2xl font-bold text-emerald-400">
-            ${(seguroResumen.totalRecaudado || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
-          </p>
+          <p className="text-2xl font-bold text-emerald-400">${totalRecaudadoSeguro}.00 MXN</p>
         </div>
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Por Cobrar</p>
-          <p className="text-2xl font-bold text-amber-400">
-            ${(seguroResumen.porCobrar || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
-          </p>
+          <p className="text-2xl font-bold text-amber-400">${porCobrarSeguro}.00 MXN</p>
         </div>
         <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm space-y-2">
           <p className="text-xs uppercase tracking-wider font-semibold text-slate-400">Morosidad</p>
-          <p className="text-2xl font-bold text-rose-400">{seguroResumen.morosidad || 0}%</p>
+          <p className="text-2xl font-bold text-rose-400">{morosidadSegura}%</p>
         </div>
       </section>
 
-      {/* COMPONENTES DE ACCIÓN */}
+      {/* COMPONENTES OPERATIVOS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Catálogo */}
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4">
           <h2 className="text-lg font-semibold text-amber-400 flex items-center gap-2">📋 1. Crear Concepto Base</h2>
           <form onSubmit={handleCrearCuota} className="space-y-4 text-sm">
@@ -377,18 +346,14 @@ export default function FinanzasDashboardPage() {
                 type="number"
                 min="1"
                 max="28"
-                placeholder="Día límite mensual"
+                placeholder="Día límite"
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500"
                 value={diaVencimiento}
                 onChange={(e) => setDiaVencimiento(e.target.value)}
                 required
               />
             </div>
-            <select
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none"
-              value={tipoCuota}
-              onChange={(e) => setTipoCuota(e.target.value)}
-            >
+            <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white focus:outline-none" value={tipoCuota} onChange={(e) => setTipoCuota(e.target.value)}>
               <option value="MANTENIMIENTO_ORDINARIO">Mantenimiento Ordinario</option>
               <option value="EXTRAORDINARIO">Cuota Extraordinaria</option>
             </select>
@@ -398,7 +363,6 @@ export default function FinanzasDashboardPage() {
           </form>
         </div>
 
-        {/* Facturación Masiva */}
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4 flex flex-col justify-between">
           <div className="space-y-4 text-sm">
             <h2 className="text-lg font-semibold text-emerald-400 flex items-center gap-2">🚀 2. Disparar Facturación</h2>
@@ -407,11 +371,7 @@ export default function FinanzasDashboardPage() {
                 ⚠️ Registra una cuota en el Paso 1 para habilitar la facturación.
               </div>
             ) : (
-              <select
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-emerald-400 font-mono focus:outline-none"
-                value={cuotaSeleccionadaId}
-                onChange={(e) => setCuotaSeleccionadaId(e.target.value)}
-              >
+              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-emerald-400 font-mono focus:outline-none" value={cuotaSeleccionadaId} onChange={(e) => setCuotaSeleccionadaId(e.target.value)}>
                 {cuotasDisponibles.map((cuota) => (
                   <option key={cuota.id} value={cuota.id}>{cuota.nombre} — ${cuota.monto} MXN</option>
                 ))}
@@ -435,24 +395,13 @@ export default function FinanzasDashboardPage() {
         </div>
       </div>
 
-      {/* TABLA DINÁMICA CON FILTROS E INTERACTIVIDAD */}
+      {/* TABLA DINÁMICA DE USUARIOS */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-md">
         <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row gap-4 justify-between items-stretch sm:items-center bg-slate-900/50">
           <h2 className="text-xl font-semibold text-slate-200">Estatus Financiero por Departamento</h2>
-          
           <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              type="text"
-              placeholder="Buscar unidad (Ej. 101)..."
-              className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 w-full sm:w-48 text-white"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-            />
-            <select
-              className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none text-slate-300 cursor-pointer"
-              value={filtroEstatus}
-              onChange={(e) => setFiltroEstatus(e.target.value)}
-            >
+            <input type="text" placeholder="Buscar unidad..." className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none text-white w-full sm:w-48" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+            <select className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300" value={filtroEstatus} onChange={(e) => setFiltroEstatus(e.target.value)}>
               <option value="TODOS">Todos los Estatus</option>
               <option value="PENDIENTE">Pendientes</option>
               <option value="PAGADO">Pagados</option>
@@ -462,31 +411,30 @@ export default function FinanzasDashboardPage() {
         </div>
 
         {cargandoUnidades ? (
-          <div className="p-12 text-center text-slate-500 text-sm animate-pulse">⏳ Extrayendo registros financieros en tiempo real...</div>
+          <div className="p-12 text-center text-slate-500 text-sm animate-pulse">⏳ Extrayendo registros financieros...</div>
         ) : unidadesFiltradas.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 text-sm">📭 No se encontraron registros financieros para este condominio.</div>
+          <div className="p-12 text-center text-slate-500 text-sm">📭 No se encontraron registros financieros.</div>
         ) : (
           <div className="overflow-x-auto text-xs sm:text-sm">
             <table className="w-full text-left text-slate-300">
               <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
                 <tr>
                   <th className="p-4">ID Sistema</th>
-                  <th className="p-4">Departamento / Unidad</th>
+                  <th className="p-4">Departamento</th>
                   <th className="p-4">Último Cargo</th>
-                  <th className="p-4 text-center">Estatus del Periodo</th>
-                  <th className="p-4 text-center">Acciones de Cobro</th>
+                  <th className="p-4 text-center">Estatus</th>
+                  <th className="p-4 text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
                 {unidadesFiltradas.map((u) => {
                   if (!u) return null;
+                  const montoUnidad = u.monto ? Number(u.monto) : 0;
                   return (
                     <tr key={u.id} className="hover:bg-slate-800/30 transition-colors">
                       <td className="p-4 font-mono text-xs text-blue-400">{u.id}</td>
-                      <td className="p-4 font-semibold text-white">Depto {u.unidad || "S/N"}</td>
-                      <td className="p-4 font-medium text-slate-300">
-                        ${(u.monto || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })} MXN
-                      </td>
+                      <td className="p-4 font-semibold text-white">{u.unidad || "S/N"}</td>
+                      <td className="p-4 font-medium text-slate-300">${montoUnidad}.00 MXN</td>
                       <td className="p-4 text-center">
                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${obtenerEstiloEstatus(u.estatus)}`}>
                           {u.estatus || "PENDIENTE"}
@@ -494,16 +442,13 @@ export default function FinanzasDashboardPage() {
                       </td>
                       <td className="p-4 text-center">
                         {u.cargoId && u.estatus !== "PAGADO" ? (
-                          <button
-                            onClick={() => handleRegistrarPago(u.cargoId!)}
-                            className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-3 py-1 rounded-md text-xs transition shadow-sm"
-                          >
-                            Liquidar Deuda
+                          <button onClick={() => handleRegistrarPago(u.cargoId!)} className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold px-3 py-1 rounded-md text-xs transition shadow-sm">
+                            Liquidar
                           </button>
                         ) : u.estatus === "PAGADO" ? (
                           <span className="text-emerald-400 text-xs font-medium">✅ Al corriente</span>
                         ) : (
-                          <span className="text-slate-500 text-xs">Sin cargos activos</span>
+                          <span className="text-slate-500 text-xs">Sin cargos</span>
                         )}
                       </td>
                     </tr>
