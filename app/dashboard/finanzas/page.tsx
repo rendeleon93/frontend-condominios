@@ -165,15 +165,19 @@ export default function FinanzasDashboardPage() {
         body: formData
       });
 
+      const data = await res.json();
+
       if (res.ok) {
-        const data = await res.json();
-        alert(`✓ ¡SPEI Conciliado con éxito!\n\nBanco: ${data.datosExtraidos.banco}\nRastreo: ${data.datosExtraidos.claveRastreo}\nMonto: ${formatoMoneda(data.datosExtraidos.montoValidado)}`);
+        alert(`✓ ¡SPEI Conciliado Real con Éxito!\n\nBanco: ${data.datosExtraidos.banco}\nRastreo: ${data.datosExtraidos.claveRastreo}\nMonto Leído: ${formatoMoneda(data.datosExtraidos.montoValidado)}`);
         if (unidadSeleccionadaModal) abrirGestorCobroDetallado(unidadSeleccionadaModal);
         cargarDatosDelCondominio(condominioSeleccionadoId);
       } else {
-        alert("No se pudo procesar la firma del archivo contable.");
+        alert(`❌ Error de Validación:\n${data.error || "No se reconoció el comprobante."}`);
       }
-    } catch (e) { console.error(e); } finally { setProcesandoSPEIId(null); }
+    } catch (e) { 
+      console.error(e);
+      alert("Ocurrió un error en la conexión con el servidor.");
+    } finally { setProcesandoSPEIId(null); }
   };
 
   const handleCrearCuota = async (e: React.FormEvent) => {
@@ -346,9 +350,9 @@ export default function FinanzasDashboardPage() {
                                 </button>
                               )}
                               
-                              {/* 📤 BOTÓN DE ACCIÓN: CONCILIACIÓN DE COMPROBANTES SPEI */}
+                              {/* 📤 BOTÓN DE ACCIÓN: CONCILIACIÓN DE COMPROBANTES SPEI REAL */}
                               <label className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2 py-1 rounded text-[10px] font-medium cursor-pointer transition">
-                                {procesandoSPEIId === item.cargoId ? "Validando..." : "Subir SPEI 📤"}
+                                {procesandoSPEIId === item.cargoId ? "Analizando..." : "Subir SPEI 📤"}
                                 <input 
                                   type="file" 
                                   accept="image/*,application/pdf" 
