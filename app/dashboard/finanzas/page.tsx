@@ -40,17 +40,17 @@ export default function FinanzasDashboardPage() {
   const [cargoIdEspecifico, setCargoIdEspecifico] = useState<string | null>(null);
   const [itemsDesglose, setItemsDesglose] = useState<DesgloseCargo[]>([]);
   const [montoAbono, setMontoAbono] = useState("");
+  
+  const [procesandoSPEIId, setProcesandoSPEIId] = useState<string | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Efecto reactivo para refrescar datos cuando cambia el condominio seleccionado
   useEffect(() => {
     if (mounted && condominioSeleccionadoId && condominioSeleccionadoId !== "null" && condominioSeleccionadoId !== "undefined") {
       cargarDatosDelCondominio(condominioSeleccionadoId);
     }
   }, [mounted, condominioSeleccionadoId]);
 
-  // Escucha activa de retorno exitoso (Conciliación automática en base de datos)
   useEffect(() => {
     if (mounted) {
       const queryParams = new URLSearchParams(window.location.search);
@@ -62,17 +62,14 @@ export default function FinanzasDashboardPage() {
           try {
             const res = await fetch(`${API_BASE_URL}/api/admin/cargos/${cargoId}/pagar`, {
               method: "PATCH",
-              headers: { 
-                "Content-Type": "application/json", 
-                "Authorization": `Bearer ${localStorage.getItem("token")}` 
-              }
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("token")}` }
             });
             if (res.ok) {
               alert("🎉 ¡Pago recibido y conciliado automáticamente por Stripe Checkout!");
               window.history.replaceState({}, document.title, window.location.pathname);
               if (condominioSeleccionadoId) cargarDatosDelCondominio(condominioSeleccionadoId);
             }
-          } catch (e) { console.error("Error al conciliar pago:", e); }
+          } catch (e) { console.error(e); }
         };
         conciliarPagoStripe();
       }
@@ -152,6 +149,31 @@ export default function FinanzasDashboardPage() {
         setItemsDesglose(data || []);
       }
     } catch (e) { console.error(e); } finally { setCargandoDesglose(false); }
+  };
+
+  const handleSubirComprobanteSPEI = async (cargoId: string, archivo: File) => {
+    if (!archivo) return;
+    setProcesandoSPEIId(cargoId);
+
+    const formData = new FormData();
+    formData.append("comprobante", archivo);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/cargos/${cargoId}/subir-comprobante`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        alert(`✓ ¡SPEI Conciliado con éxito!\n\nBanco: ${data.datosExtraidos.banco}\nRastreo: ${data.datosExtraidos.claveRastreo}\nMonto: ${formatoMoneda(data.datosExtraidos.montoValidado)}`);
+        if (unidadSeleccionadaModal) abrirGestorCobroDetallado(unidadSeleccionadaModal);
+        cargarDatosDelCondominio(condominioSeleccionadoId);
+      } else {
+        alert("No se pudo procesar la firma del archivo contable.");
+      }
+    } catch (e) { console.error(e); } finally { setProcesandoSPEIId(null); }
   };
 
   const handleCrearCuota = async (e: React.FormEvent) => {
@@ -276,7 +298,7 @@ export default function FinanzasDashboardPage() {
       {/* MODAL AVANZADA: DESGLOSE COMPLETO DE ADEUDOS */}
       {unidadSeleccionadaModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-xl w-full space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-bold text-slate-100">📋 Desglosado Analítico de Adeudos</h3>
               <button onClick={() => setUnidadSeleccionadaModal(null)} className="text-slate-400 hover:text-white font-bold text-sm">✕ Cerrar</button>
@@ -295,42 +317,51 @@ export default function FinanzasDashboardPage() {
                   {deudasPendientes.length === 0 ? (
                     <p className="text-xs text-slate-500 italic pl-2">Al corriente. No hay saldos pendientes.</p>
                   ) : (
-                    <div className="divide-y divide-slate-800/60 space-y-2">
+                    <div className="divide-y divide-slate-800/60 space-y-3">
                       {deudasPendientes.map((item) => {
                         return (
-                          <div key={item.cargoId} className="pt-2 flex justify-between items-center gap-2 text-xs">
+                          <div key={item.cargoId} className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                             <div>
                               <p className="font-semibold text-white">{item.concepto}</p>
                               <p className="text-[10px] text-slate-500">Vence: {item.vencimiento}</p>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-amber-400 font-mono">{formatoMoneda(item.monto)}</span>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-bold text-amber-400 font-mono mr-1">{formatoMoneda(item.monto)}</span>
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${obtenerEstiloEstatus(item.estado)}`}>{item.estado}</span>
                               
-                              {/* 💳 PASARELA INTELIGENTE CON INTERCEPCIÓN EN CASO DE FALLAR LA API KEY */}
+                              {/* STRIPE CHECKOUT LINK REAL */}
                               {item.urlPagoDigital ? (
-                                <a 
-                                  href={item.urlPagoDigital} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
-                                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-2 py-1 rounded text-[10px] transition text-center shadow-sm"
-                                >
+                                <a href={item.urlPagoDigital} target="_blank" rel="noopener noreferrer" className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-2 py-1 rounded text-[10px] transition text-center shadow-sm">
                                   Link de Pago 💳
                                 </a>
                               ) : (
                                 <button 
                                   onClick={() => {
-                                    const confirmar = window.confirm(`💳 [MODO SIMULACIÓN]\nNo se detectó un token real de Stripe Checkout en producción.\n\n¿Deseas simular la aprobación automática de este cobro por ${formatoMoneda(item.monto)} MXN?`);
-                                    if (confirmar) {
-                                      window.location.href = `/dashboard/finanzas?pago_exitoso=true&cargoId=${item.cargoId}`;
-                                    }
+                                    const confirmar = window.confirm(`💳 [MODO SIMULACIÓN]\n¿Deseas simular la aprobación de Stripe por ${formatoMoneda(item.monto)} MXN?`);
+                                    if (confirmar) window.location.href = `/dashboard/finanzas?pago_exitoso=true&cargoId=${item.cargoId}`;
                                   }}
-                                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-2 py-1 rounded text-[10px] transition text-center shadow-sm relative z-10"
+                                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-2 py-1 rounded text-[10px] transition text-center shadow-sm"
                                 >
                                   Simular Pago 💳
                                 </button>
                               )}
                               
+                              {/* 📤 BOTÓN DE ACCIÓN: CONCILIACIÓN DE COMPROBANTES SPEI */}
+                              <label className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2 py-1 rounded text-[10px] font-medium cursor-pointer transition">
+                                {procesandoSPEIId === item.cargoId ? "Validando..." : "Subir SPEI 📤"}
+                                <input 
+                                  type="file" 
+                                  accept="image/*,application/pdf" 
+                                  className="hidden" 
+                                  disabled={procesandoSPEIId !== null}
+                                  onChange={(e) => {
+                                    if (e.target.files && e.target.files[0]) {
+                                      handleSubirComprobanteSPEI(item.cargoId, e.target.files[0]);
+                                    }
+                                  }}
+                                />
+                              </label>
+
                               <button onClick={() => setCargoIdEspecifico(item.cargoId)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-3 py-1 rounded text-[10px] transition shadow-sm">Cobrar</button>
                             </div>
                           </div>
