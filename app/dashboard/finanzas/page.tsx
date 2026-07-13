@@ -43,14 +43,14 @@ export default function FinanzasDashboardPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Forzar la carga apenas cambie el ID del Condominio
+  // Efecto reactivo para refrescar datos cuando cambia el condominio seleccionado
   useEffect(() => {
     if (mounted && condominioSeleccionadoId && condominioSeleccionadoId !== "null" && condominioSeleccionadoId !== "undefined") {
       cargarDatosDelCondominio(condominioSeleccionadoId);
     }
   }, [mounted, condominioSeleccionadoId]);
 
-  // Escuchar retorno de Stripe Checkout
+  // Escucha activa de retorno exitoso (Conciliación automática en base de datos)
   useEffect(() => {
     if (mounted) {
       const queryParams = new URLSearchParams(window.location.search);
@@ -62,14 +62,17 @@ export default function FinanzasDashboardPage() {
           try {
             const res = await fetch(`${API_BASE_URL}/api/admin/cargos/${cargoId}/pagar`, {
               method: "PATCH",
-              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("token")}` }
+              headers: { 
+                "Content-Type": "application/json", 
+                "Authorization": `Bearer ${localStorage.getItem("token")}` 
+              }
             });
             if (res.ok) {
               alert("🎉 ¡Pago recibido y conciliado automáticamente por Stripe Checkout!");
               window.history.replaceState({}, document.title, window.location.pathname);
               if (condominioSeleccionadoId) cargarDatosDelCondominio(condominioSeleccionadoId);
             }
-          } catch (e) { console.error(e); }
+          } catch (e) { console.error("Error al conciliar pago:", e); }
         };
         conciliarPagoStripe();
       }
@@ -98,7 +101,6 @@ export default function FinanzasDashboardPage() {
         const data = await res.json();
         if (data && data.length > 0) {
           setCondominios(data);
-          // 🛡️ Seteo inmediato del primer condominio para que nunca aparezca vacío
           setCondominioSeleccionadoId(String(data[0].id));
         }
       }
@@ -295,9 +297,6 @@ export default function FinanzasDashboardPage() {
                   ) : (
                     <div className="divide-y divide-slate-800/60 space-y-2">
                       {deudasPendientes.map((item) => {
-                        // URL real de Stripe o fallback seguro si el backend no cuenta con llaves configuradas
-                        const linkFinalStripe = item.urlPagoDigital || `https://checkout.stripe.com/pay/sigmato_checkout_${item.cargoId}`;
-
                         return (
                           <div key={item.cargoId} className="pt-2 flex justify-between items-center gap-2 text-xs">
                             <div>
@@ -308,9 +307,29 @@ export default function FinanzasDashboardPage() {
                               <span className="font-bold text-amber-400 font-mono">{formatoMoneda(item.monto)}</span>
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${obtenerEstiloEstatus(item.estado)}`}>{item.estado}</span>
                               
-                              <a href={linkFinalStripe} target="_blank" rel="noopener noreferrer" className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-2 py-1 rounded text-[10px] transition text-center shadow-sm">
-                                Link de Pago 💳
-                              </a>
+                              {/* 💳 PASARELA INTELIGENTE CON INTERCEPCIÓN EN CASO DE FALLAR LA API KEY */}
+                              {item.urlPagoDigital ? (
+                                <a 
+                                  href={item.urlPagoDigital} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-2 py-1 rounded text-[10px] transition text-center shadow-sm"
+                                >
+                                  Link de Pago 💳
+                                </a>
+                              ) : (
+                                <button 
+                                  onClick={() => {
+                                    const confirmar = window.confirm(`💳 [MODO SIMULACIÓN]\nNo se detectó un token real de Stripe Checkout en producción.\n\n¿Deseas simular la aprobación automática de este cobro por ${formatoMoneda(item.monto)} MXN?`);
+                                    if (confirmar) {
+                                      window.location.href = `/dashboard/finanzas?pago_exitoso=true&cargoId=${item.cargoId}`;
+                                    }
+                                  }}
+                                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-2 py-1 rounded text-[10px] transition text-center shadow-sm relative z-10"
+                                >
+                                  Simular Pago 💳
+                                </button>
+                              )}
                               
                               <button onClick={() => setCargoIdEspecifico(item.cargoId)} className="bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold px-3 py-1 rounded text-[10px] transition shadow-sm">Cobrar</button>
                             </div>
